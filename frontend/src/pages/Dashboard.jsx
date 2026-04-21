@@ -4,6 +4,11 @@ import StatusBadge from "../components/StatusBadge";
 import { devicesAPI, alertsAPI, monitoringAPI } from "../api";
 import { Server, Wifi, AlertTriangle, Activity } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  LineChart, Line,
+} from "recharts";
 
 function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
   const colors = { accent: "text-accent", green: "text-green-400", amber: "text-amber-400", red: "text-red-400" };
@@ -23,21 +28,43 @@ function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
   );
 }
 
+const DONUT_COLORS = { online: "#22c55e", offline: "#ef4444", unknown: "#6b7280" };
+
 export default function Dashboard() {
   const [devices, setDevices] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [monDevices, setMonDevices] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([devicesAPI.list(), alertsAPI.list()]).then(([d, a]) => {
+    Promise.all([devicesAPI.list(), alertsAPI.list(), monitoringAPI.all()]).then(([d, a, m]) => {
       setDevices(d.data);
       setAlerts(a.data);
+      setMonDevices(m.data);
     }).finally(() => setLoading(false));
   }, []);
 
   const online = devices.filter((d) => d.status === "online").length;
   const offline = devices.filter((d) => d.status === "offline").length;
+  const unknown = devices.filter((d) => !["online","offline"].includes(d.status)).length;
   const critical = alerts.filter((a) => a.severity === "critical").length;
+
+  const donutData = [
+    { name: "Online", value: online },
+    { name: "Offline", value: offline },
+    { name: "Unknown", value: unknown },
+  ].filter((d) => d.value > 0);
+
+  const cpuBarData = monDevices
+    .filter((d) => d.metrics?.cpu != null)
+    .sort((a, b) => b.metrics.cpu - a.metrics.cpu)
+    .slice(0, 8)
+    .map((d) => ({ name: d.hostname.length > 10 ? d.hostname.slice(0, 10) + "…" : d.hostname, cpu: Math.round(d.metrics.cpu) }));
+
+  const alertBySeverity = ["info","warning","critical"].map((s) => ({
+    name: s,
+    count: alerts.filter((a) => a.severity === s).length,
+  }));
 
   return (
     <Layout title="Dashboard">
@@ -46,6 +73,78 @@ export default function Dashboard() {
         <StatCard icon={Wifi} label="Online" value={online} sub={`${devices.length ? Math.round((online / devices.length) * 100) : 0}% uptime`} color="green" />
         <StatCard icon={Activity} label="Offline" value={offline} color="red" />
         <StatCard icon={AlertTriangle} label="Active Alerts" value={alerts.length} sub={`${critical} critical`} color="amber" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        {/* Device status donut */}
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-3">Device Status</h2>
+          {devices.length > 0 ? (
+            <div className="flex items-center gap-4">
+              <ResponsiveContainer width={110} height={110}>
+                <PieChart>
+                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" strokeWidth={0}>
+                    {donutData.map((entry) => (
+                      <Cell key={entry.name} fill={DONUT_COLORS[entry.name.toLowerCase()] || "#6b7280"} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 8, fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1.5">
+                {donutData.map((d) => (
+                  <div key={d.name} className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full" style={{ background: DONUT_COLORS[d.name.toLowerCase()] }} />
+                    <span className="text-muted">{d.name}</span>
+                    <span className="text-white font-medium ml-auto pl-4">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-muted text-sm text-center py-8">No devices</div>
+          )}
+        </div>
+
+        {/* CPU bar chart */}
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-3">CPU Usage (Top Devices)</h2>
+          {cpuBarData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={110}>
+              <BarChart data={cpuBarData} layout="vertical" margin={{ left: 0, right: 10 }}>
+                <XAxis type="number" domain={[0, 100]} tick={{ fill: "#6b7280", fontSize: 10 }} tickLine={false} axisLine={false} unit="%" />
+                <YAxis type="category" dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} tickLine={false} axisLine={false} width={60} />
+                <CartesianGrid horizontal={false} stroke="#2a2d3a" />
+                <Tooltip contentStyle={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 8, fontSize: 11 }} formatter={(v) => [`${v}%`, "CPU"]} />
+                <Bar dataKey="cpu" fill="#4f7cff" radius={[0, 3, 3, 0]} maxBarSize={10} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-muted text-sm text-center py-8">No metrics yet — poll devices</div>
+          )}
+        </div>
+
+        {/* Alert severity breakdown */}
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-3">Alert Breakdown</h2>
+          <ResponsiveContainer width="100%" height={110}>
+            <BarChart data={alertBySeverity} margin={{ left: -20, right: 10 }}>
+              <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} tickLine={false} axisLine={false} />
+              <YAxis allowDecimals={false} tick={{ fill: "#6b7280", fontSize: 10 }} tickLine={false} axisLine={false} />
+              <CartesianGrid vertical={false} stroke="#2a2d3a" />
+              <Tooltip contentStyle={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 8, fontSize: 11 }} />
+              <Bar dataKey="count" radius={[3,3,0,0]} maxBarSize={28}
+                fill="#f59e0b"
+                label={false}
+              >
+                {alertBySeverity.map((entry) => {
+                  const c = entry.name === "critical" ? "#ef4444" : entry.name === "warning" ? "#f59e0b" : "#4f7cff";
+                  return <Cell key={entry.name} fill={c} />;
+                })}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { devicesAPI, vaultAPI } from "../api";
-import { Plus, Trash2, Edit3, Wifi, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, Edit3, Wifi, Download, ChevronDown, ChevronUp, Cpu } from "lucide-react";
 import toast from "react-hot-toast";
 
 const DEVICE_TYPES = ["router", "switch", "firewall", "ap", "server", "other"];
-const VENDORS = ["cisco", "mikrotik", "fortinet", "hp", "juniper", "ubiquiti", "other"];
+const VENDORS = ["cisco", "cisco-asa", "mikrotik", "fortinet", "paloalto", "checkpoint", "juniper", "hp", "ubiquiti", "other"];
 
 function DeviceForm({ initial, onSave, onCancel, vaultCreds }) {
   const [form, setForm] = useState(
@@ -139,6 +139,17 @@ export default function DeviceHub() {
     else toast.error(`Failed: ${res.data.error}`, { id: "pull" });
   };
 
+  const handleAutoDetect = async (id) => {
+    toast.loading("Auto-detecting...", { id: `detect-${id}` });
+    const res = await devicesAPI.autoDetect(id);
+    if (res.data.success) {
+      toast.success(`OS: ${res.data.os_version || "?"} · Serial: ${res.data.serial || "?"}`, { id: `detect-${id}` });
+      load();
+    } else {
+      toast.error(res.data.error || "Detection failed", { id: `detect-${id}` });
+    }
+  };
+
   const sort = (key) => {
     if (sortKey === key) setSortDir((d) => -d);
     else { setSortKey(key); setSortDir(1); }
@@ -215,6 +226,10 @@ export default function DeviceHub() {
                       <button onClick={() => setEditing(d)} title="Edit"
                         className="p-1.5 text-muted hover:text-white hover:bg-white/10 rounded transition-colors">
                         <Edit3 size={13} />
+                      </button>
+                      <button onClick={() => handleAutoDetect(d.id)} title="Auto-detect OS/Serial"
+                        className="p-1.5 text-muted hover:text-purple-400 hover:bg-purple-400/10 rounded transition-colors">
+                        <Cpu size={13} />
                       </button>
                       <button onClick={() => handleDelete(d.id, d.hostname)} title="Delete"
                         className="p-1.5 text-muted hover:text-red-400 hover:bg-red-400/10 rounded transition-colors">

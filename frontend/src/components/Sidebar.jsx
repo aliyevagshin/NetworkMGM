@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Server, Terminal, Network, Activity,
   BarChart2, Package, FolderOpen, Lock, FileText, Settings, LogOut,
+  HardDrive, ScrollText, KeyRound,
 } from "lucide-react";
 import { useAuthStore } from "../store";
 
@@ -12,9 +13,12 @@ const nav = [
   { to: "/ipam", icon: Network, label: "IPAM" },
   { to: "/topology", icon: Activity, label: "Topology" },
   { to: "/monitoring", icon: BarChart2, label: "Monitoring" },
+  { to: "/backup", icon: HardDrive, label: "Backups" },
   { to: "/inventory", icon: Package, label: "Inventory" },
   { to: "/files", icon: FolderOpen, label: "Files" },
   { to: "/vault", icon: Lock, label: "Vault" },
+  { to: "/keypass", icon: KeyRound, label: "KeyPass" },
+  { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/docs", icon: FileText, label: "Docs" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];

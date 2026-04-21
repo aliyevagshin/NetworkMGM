@@ -257,3 +257,102 @@ class AuditLogOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- User management ---
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: str = "operator"
+
+
+class UserUpdate(BaseModel):
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
+
+
+# --- Device Link ---
+class DeviceLinkBase(BaseModel):
+    source_device_id: int
+    target_device_id: int
+    source_port: Optional[str] = None
+    target_port: Optional[str] = None
+    link_type: str = "ethernet"
+
+
+class DeviceLinkCreate(DeviceLinkBase):
+    pass
+
+
+class DeviceLinkOut(DeviceLinkBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Log Entry ---
+class LogEntryOut(BaseModel):
+    id: int
+    device_id: Optional[int]
+    level: str
+    source: str
+    message: str
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LogEntryCreate(BaseModel):
+    device_id: Optional[int] = None
+    level: str = "info"
+    source: str = "system"
+    message: str
+
+
+# --- KeyPass ---
+class KeyPassBase(BaseModel):
+    name: str
+    username: Optional[str] = None
+    url: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[str] = None
+    category: str = "General"
+
+
+class KeyPassCreate(KeyPassBase):
+    password: Optional[str] = None
+
+
+class KeyPassOut(KeyPassBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- LDAP Config ---
+class LDAPConfigBase(BaseModel):
+    server: Optional[str] = None
+    port: int = 389
+    use_ssl: bool = False
+    base_dn: Optional[str] = None
+    bind_dn: Optional[str] = None
+    user_search_filter: str = "(sAMAccountName={username})"
+    default_role: str = "operator"
+    enabled: bool = False
+
+
+class LDAPConfigCreate(LDAPConfigBase):
+    bind_password: Optional[str] = None
+
+
+class LDAPConfigOut(LDAPConfigBase):
+    id: int
+
+    class Config:
+        from_attributes = True

@@ -38,6 +38,7 @@ export const devicesAPI = {
   testSSH: (id) => api.post(`/devices/${id}/test-ssh`),
   pullConfig: (id) => api.post(`/devices/${id}/pull-config`),
   configHistory: (id) => api.get(`/devices/${id}/config-history`),
+  autoDetect: (id) => api.post(`/devices/${id}/detect`),
 };
 
 export const ipamAPI = {
@@ -107,6 +108,40 @@ export const settingsAPI = {
 
 export const auditAPI = {
   list: (limit = 100) => api.get("/audit", { params: { limit } }),
+};
+
+export const usersAPI = {
+  list: () => api.get("/users"),
+  create: (data) => api.post("/users", data),
+  update: (id, data) => api.put(`/users/${id}`, data),
+  delete: (id) => api.delete(`/users/${id}`),
+};
+
+export const topologyAPI = {
+  links: () => api.get("/topology/links"),
+  createLink: (data) => api.post("/topology/links", data),
+  updateLink: (id, data) => api.put(`/topology/links/${id}`, data),
+  deleteLink: (id) => api.delete(`/topology/links/${id}`),
+};
+
+export const logsAPI = {
+  list: (params = {}) => api.get("/logs", { params }),
+  create: (data) => api.post("/logs", data),
+  clear: () => api.delete("/logs/clear"),
+};
+
+export const keypassAPI = {
+  list: () => api.get("/keypass"),
+  create: (data) => api.post("/keypass", data),
+  update: (id, data) => api.put(`/keypass/${id}`, data),
+  delete: (id) => api.delete(`/keypass/${id}`),
+  getPassword: (id) => api.get(`/keypass/${id}/password`),
+};
+
+export const ldapAPI = {
+  get: () => api.get("/ldap"),
+  update: (data) => api.put("/ldap", data),
+  test: (username, password) => api.post("/ldap/test", null, { params: { username, password } }),
 };
 
 export default api;

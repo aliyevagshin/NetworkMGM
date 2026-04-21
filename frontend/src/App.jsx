@@ -13,6 +13,9 @@ import Files from "./pages/Files";
 import Vault from "./pages/Vault";
 import Docs from "./pages/Docs";
 import Settings from "./pages/Settings";
+import Backup from "./pages/Backup";
+import Logs from "./pages/Logs";
+import KeyPass from "./pages/KeyPass";
 
 function Protected({ children }) {
   const token = useAuthStore((s) => s.token);
@@ -39,6 +42,9 @@ export default function App() {
         <Route path="/inventory" element={<Protected><Inventory /></Protected>} />
         <Route path="/files" element={<Protected><Files /></Protected>} />
         <Route path="/vault" element={<Protected><Vault /></Protected>} />
+        <Route path="/keypass" element={<Protected><KeyPass /></Protected>} />
+        <Route path="/backup" element={<Protected><Backup /></Protected>} />
+        <Route path="/logs" element={<Protected><Logs /></Protected>} />
         <Route path="/docs" element={<Protected><Docs /></Protected>} />
         <Route path="/settings" element={<Protected><Settings /></Protected>} />
       </Routes>

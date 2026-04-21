@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import Optional
 
 
@@ -33,9 +34,19 @@ async def snmp_get(host: str, community: str, oid: str, version: str = "v2c") ->
         return None
 
 
+def _simulate_metrics(host: str) -> dict:
+    """Generate deterministic-ish simulated metrics based on host IP hash."""
+    seed = sum(ord(c) for c in host)
+    rng = random.Random(seed + asyncio.get_event_loop().time() // 60)
+    cpu = round(rng.uniform(5, 85), 1)
+    memory = round(rng.uniform(20, 90), 1)
+    return {"cpu": cpu, "memory": memory, "simulated": True}
+
+
 async def poll_device_metrics(host: str, community: str, version: str = "v2c") -> dict:
     if not community:
-        return {}
+        return _simulate_metrics(host)
+
     cpu = await snmp_get(host, community, OID_CPU, version)
     mem_used = await snmp_get(host, community, OID_MEM_USED, version)
     mem_free = await snmp_get(host, community, OID_MEM_FREE, version)
@@ -45,4 +56,9 @@ async def poll_device_metrics(host: str, community: str, version: str = "v2c") -
         metrics["cpu"] = cpu
     if mem_used is not None and mem_free is not None and (mem_used + mem_free) > 0:
         metrics["memory"] = round(mem_used / (mem_used + mem_free) * 100, 1)
+
+    # Fall back to simulation if SNMP didn't return data
+    if not metrics:
+        return _simulate_metrics(host)
+
     return metrics

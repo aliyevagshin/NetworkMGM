@@ -169,3 +169,52 @@ class Setting(Base):
     key = Column(String, unique=True)
     value = Column(String)
     description = Column(String)
+
+
+class DeviceLink(Base):
+    __tablename__ = "device_links"
+    id = Column(Integer, primary_key=True)
+    source_device_id = Column(Integer, ForeignKey("devices.id"))
+    target_device_id = Column(Integer, ForeignKey("devices.id"))
+    source_port = Column(String, nullable=True)
+    target_port = Column(String, nullable=True)
+    link_type = Column(String, default="ethernet")  # ethernet/fiber/wifi/lag
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class LogEntry(Base):
+    __tablename__ = "log_entries"
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
+    level = Column(String, default="info")   # info/warning/error/critical
+    source = Column(String, default="system")  # syslog/ssh/system/snmp
+    message = Column(Text)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class KeyPassEntry(Base):
+    __tablename__ = "keypass_entries"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    username = Column(String, nullable=True)
+    encrypted_password = Column(Text, nullable=True)
+    url = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    tags = Column(String, nullable=True)
+    category = Column(String, default="General")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+
+
+class LDAPConfig(Base):
+    __tablename__ = "ldap_config"
+    id = Column(Integer, primary_key=True)
+    server = Column(String, nullable=True)
+    port = Column(Integer, default=389)
+    use_ssl = Column(Boolean, default=False)
+    base_dn = Column(String, nullable=True)
+    bind_dn = Column(String, nullable=True)
+    encrypted_bind_password = Column(Text, nullable=True)
+    user_search_filter = Column(String, default="(sAMAccountName={username})")
+    default_role = Column(String, default="operator")
+    enabled = Column(Boolean, default=False)

@@ -48,7 +48,7 @@ export default function IPAM() {
     setScanning(true);
     toast.loading("Scanning...", { id: "scan" });
     const res = await ipamAPI.scan(selected.id);
-    toast.success(`Found ${res.data.discovered.length} new IPs`, { id: "scan" });
+    toast.success(`Scanned ${res.data.total_scanned} hosts, found ${res.data.discovered.length} active`, { id: "scan" });
     setScanning(false);
     selectSubnet(selected);
   };

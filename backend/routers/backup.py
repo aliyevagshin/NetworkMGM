@@ -23,6 +23,23 @@ def list_backups(
     return q.order_by(models.ConfigBackup.created_at.desc()).all()
 
 
+@router.get("/{backup_id}/view")
+def view_backup(backup_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    backup = db.query(models.ConfigBackup).filter(models.ConfigBackup.id == backup_id).first()
+    if not backup or not os.path.exists(backup.filepath):
+        raise HTTPException(status_code=404, detail="Backup file not found")
+    with open(backup.filepath, "r", errors="replace") as f:
+        content = f.read()
+    return {
+        "id": backup.id,
+        "device_id": backup.device_id,
+        "filename": os.path.basename(backup.filepath),
+        "content": content,
+        "file_size": backup.file_size,
+        "created_at": backup.created_at,
+    }
+
+
 @router.get("/{backup_id}/download")
 def download_backup(backup_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     backup = db.query(models.ConfigBackup).filter(models.ConfigBackup.id == backup_id).first()

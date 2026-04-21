@@ -257,6 +257,84 @@ FIRST_ADMIN_PASSWORD=Admin1234!
 
 ## Bilinən Məhdudiyyətlər
 - SNMP v3 hələ tam dəstəklənmir (v1/v2c işləyir)
-- Topology səhifəsi edge-ləri avtomatik çəkir (əl ilə redaktə yoxdur)
 - Backup restore funksiyası Cisco IOS sintaksisinə uyğunlaşdırılıb
 - SSH session log faylı DB-də saxlanır amma disk yazımı hələ tətbiq edilməyib
+
+---
+
+## Dəyişiklik Qeydləri — v1.1 (2026-04-21)
+
+### 1. Backup Görüntüləyicisi
+- `GET /backups/{id}/view` endpoint əlavə edildi
+- Backup.jsx — ayrıca backup idarəetmə səhifəsi
+  - Cihaza görə filtrləmə, backup tarixçəsi cədvəli
+  - "View" düyməsi ilə faylı brauzer içində görmək
+  - Download + Restore düymələri
+
+### 2. İstifadəçi İdarəetməsi (Users) + LDAP
+- `routers/users.py` — admin-only GET/POST/PUT/DELETE /users
+- `routers/ldap.py` — LDAP/AD konfiqurasiyası (GET/PUT /ldap, POST /ldap/test)
+  - Şifrəli bind_password (AES-256 Fernet)
+  - ldap3 kitabxanası ilə test bağlantısı
+- Settings.jsx-ə "Users" və "LDAP/AD" tab-ları əlavə edildi
+
+### 3. IPAM Skan — Hostname + MAC Ünvanı
+- Skan funksiyasına `socket.gethostbyaddr()` ilə reverse DNS əlavə edildi
+- `arp -n` əmri ilə MAC ünvanı alınır
+- Tapılan cihazların hostname + MAC sahələri IP Address record-a yazılır
+- Skan nəticəsi `{ip, hostname, mac}` obyektlər qaytarır
+
+### 4. Topology — Port Etiketləri + Link İdarəetməsi
+- `DeviceLink` modeli: source/target_port, link_type
+- `routers/topology_links.py` — CRUD /topology/links
+- Topology.jsx tam yeniləndi:
+  - Real linklər API-dən yüklənir
+  - Port adları edge label kimi göstərilir (custom PortLabelEdge komponenti)
+  - "Add Link" formu — cihaz seçimi, port adları, link növü (ethernet/fiber/wireless/vpn)
+  - Seçilmiş cihazın link-ləri side paneldə siyahılanır
+
+### 5. Monitoring — Simulyasiya Fallback
+- `snmp_service.py` yeniləndi: SNMP cavab vermədikdə simulyasiya dəyərləri generasiya olunur
+- Monitoring cədvəlində simulyasiya dəyərlərinin yanında `~` işarəsi göstərilir
+- CPU/Memory sütunlarında artıq boş `—` olmur
+
+### 6. Cihaz Auto-Detect (OS Version + Serial Number)
+- `POST /devices/{id}/detect` endpoint əlavə edildi
+- SSH ilə "show version" analoqunu işlədir, regex ilə çıxarır
+- Dəstəklənən vendor-lar: cisco, cisco-asa, mikrotik, fortinet, paloalto, checkpoint, juniper, hp
+- DeviceHub.jsx-ə Cpu ikonu ilə "Auto-Detect" düyməsi əlavə edildi
+
+### 7. Dashboard — Vizual Qrafiklər
+- Recharts ilə 3 yeni qrafik əlavə edildi:
+  - **Donut chart** — Online/Offline/Unknown cihaz sayı
+  - **Horizontal bar chart** — Ən yüksək CPU-ya görə cihazlar (top 8)
+  - **Bar chart** — Alert sayının severity-yə görə bölgüsü
+
+### 8. Log İdarəetməsi
+- `LogEntry` modeli + `routers/logs.py`
+  - GET /logs?device_id=&level=&limit=200
+  - POST /logs, DELETE /logs/clear
+- Logs.jsx — log axını görüntüləmə səhifəsi
+  - Cihaz/səviyyə/limit filtrləri
+  - 10 saniyəlik auto-refresh
+  - Rəngli level etiketləri (info=mavi, warning=sarı, error/critical=qırmızı)
+
+### 9. KeyPass — Parol Meneceri
+- `KeyPassEntry` modeli + `routers/keypass.py`
+  - Full CRUD, AES-256 şifrəli parol saxlama
+  - GET /keypass/{id}/password — audit log-a yazılır
+- KeyPass.jsx — müstəqil parol meneceri səhifəsi
+  - Kateqoriyalar (Network, Server, Cloud, DB, ...)
+  - Tag-lar, URL, qeydlər
+  - Reveal/Hide, clipboard copy, axtarış + filtr
+
+### 10. Yeni Vendor Dəstəyi
+- VENDORS siyahısına əlavə edildi: `cisco-asa`, `paloalto`, `checkpoint`
+- Auto-detect regex-i bütün yeni vendor-ları dəstəkləyir
+
+### Texniki Dəyişikliklər
+- `main.py` — 5 yeni router qeydiyyata alındı: users, topology_links, logs, keypass, ldap
+- `api.js` — usersAPI, topologyAPI, logsAPI, keypassAPI, ldapAPI əlavə edildi
+- `Sidebar.jsx` — Backups, Logs, KeyPass navigasiya linkləri əlavə edildi
+- `App.jsx` — /backup, /logs, /keypass route-ları əlavə edildi
+- `requirements.txt` — `ldap3` kitabxanası əlavə edildi

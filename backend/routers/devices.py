@@ -146,6 +146,110 @@ def config_history(device_id: int, db: Session = Depends(get_db), current_user=D
     return db.query(models.ConfigBackup).filter(models.ConfigBackup.device_id == device_id).order_by(models.ConfigBackup.created_at.desc()).all()
 
 
+@router.post("/{device_id}/detect")
+def auto_detect(device_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """SSH into device and auto-detect serial number + OS version."""
+    device = db.query(models.Device).filter(models.Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    cred = _get_credential(db, device)
+    if not cred:
+        return {"success": False, "error": "No credentials"}
+
+    vendor = (device.vendor or "cisco").lower()
+    commands = {
+        "cisco": "show version",
+        "cisco-asa": "show version",
+        "mikrotik": "/system resource print\n/system routerboard print",
+        "fortinet": "get system status",
+        "paloalto": "show system info",
+        "checkpoint": "show version",
+        "juniper": "show version",
+        "hp": "show version",
+        "ubiquiti": "show system-info",
+    }
+    cmd = commands.get(vendor, "show version")
+
+    try:
+        client = ssh_service.connect(
+            device.ip_address, device.ssh_port, cred["username"], cred["password"]
+        )
+        stdout, _ = ssh_service.run_command(client, cmd)
+        client.close()
+
+        serial, os_ver = _parse_version_output(stdout, vendor)
+        if serial:
+            device.serial_number = serial if hasattr(device, 'serial_number') else None
+            # store in os_version field if no dedicated column
+        if os_ver:
+            device.os_version = os_ver
+        db.commit()
+        log_audit(db, current_user.username, "DEVICE_DETECT", device.hostname, f"serial={serial} os={os_ver}")
+        return {"success": True, "serial": serial, "os_version": os_ver, "raw": stdout[:500]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _parse_version_output(output: str, vendor: str) -> tuple:
+    import re
+    serial = None
+    os_ver = None
+
+    if vendor in ("cisco", "cisco-asa"):
+        m = re.search(r"Cisco IOS.*?Version\s+([\S]+)", output)
+        if m:
+            os_ver = "IOS " + m.group(1)
+        m = re.search(r"Processor board ID\s+(\S+)", output)
+        if m:
+            serial = m.group(1)
+        # ASA
+        m = re.search(r"Cisco Adaptive Security Appliance.*?Version\s+([\S]+)", output)
+        if m:
+            os_ver = "ASA " + m.group(1)
+        m = re.search(r"Serial Number:\s+(\S+)", output)
+        if m:
+            serial = m.group(1)
+
+    elif vendor == "fortinet":
+        m = re.search(r"Version:\s+(.+)", output)
+        if m:
+            os_ver = m.group(1).strip()
+        m = re.search(r"Serial-Number:\s+(\S+)", output)
+        if m:
+            serial = m.group(1)
+
+    elif vendor == "mikrotik":
+        m = re.search(r"version:\s+(.+)", output)
+        if m:
+            os_ver = "RouterOS " + m.group(1).strip()
+        m = re.search(r"serial-number:\s+(\S+)", output)
+        if m:
+            serial = m.group(1)
+
+    elif vendor == "paloalto":
+        m = re.search(r"sw-version:\s+(.+)", output)
+        if m:
+            os_ver = "PAN-OS " + m.group(1).strip()
+        m = re.search(r"serial:\s+(\S+)", output)
+        if m:
+            serial = m.group(1)
+
+    elif vendor == "checkpoint":
+        m = re.search(r"Product version\s+(.+)", output)
+        if m:
+            os_ver = m.group(1).strip()
+
+    elif vendor == "juniper":
+        m = re.search(r"Junos:\s+(\S+)", output)
+        if m:
+            os_ver = "JunOS " + m.group(1)
+        m = re.search(r"Chassis\s+(\S+)", output)
+        if m:
+            serial = m.group(1)
+
+    return serial, os_ver
+
+
 def _get_credential(db: Session, device: models.Device) -> dict | None:
     if not device.vault_credential_id:
         return None

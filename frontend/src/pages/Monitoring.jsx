@@ -95,13 +95,19 @@ export default function Monitoring() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <Sparkline data={dm.cpu} color={m.cpu > 90 ? "#ef4444" : "#4f7cff"} />
-                            <span className="text-xs text-muted">{m.cpu != null ? `${m.cpu.toFixed(0)}%` : "—"}</span>
+                            <span className="text-xs text-muted">
+                              {m.cpu != null ? `${m.cpu.toFixed(0)}%` : "—"}
+                              {m.simulated && <span className="ml-1 text-muted/50" title="Simulated">~</span>}
+                            </span>
                           </div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <Sparkline data={dm.mem} color={m.memory > 90 ? "#ef4444" : "#22c55e"} />
-                            <span className="text-xs text-muted">{m.memory != null ? `${m.memory.toFixed(0)}%` : "—"}</span>
+                            <span className="text-xs text-muted">
+                              {m.memory != null ? `${m.memory.toFixed(0)}%` : "—"}
+                              {m.simulated && <span className="ml-1 text-muted/50" title="Simulated">~</span>}
+                            </span>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs font-mono text-muted">{m.rtt_ms != null ? `${m.rtt_ms.toFixed(1)}ms` : "—"}</td>

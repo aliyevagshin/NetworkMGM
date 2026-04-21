@@ -20,6 +20,11 @@ from routers.files import router as files_router
 from routers.backup import router as backup_router
 from routers.settings import router as settings_router
 from routers.audit import router as audit_router
+from routers.users import router as users_router
+from routers.topology_links import router as topology_links_router
+from routers.logs import router as logs_router
+from routers.keypass import router as keypass_router
+from routers.ldap import router as ldap_router
 
 
 @asynccontextmanager
@@ -81,6 +86,11 @@ app.include_router(files_router)
 app.include_router(backup_router)
 app.include_router(settings_router)
 app.include_router(audit_router)
+app.include_router(users_router)
+app.include_router(topology_links_router)
+app.include_router(logs_router)
+app.include_router(keypass_router)
+app.include_router(ldap_router)
 
 
 @app.get("/health")

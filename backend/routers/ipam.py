@@ -7,6 +7,9 @@ import models
 import schemas
 import ipaddress
 import asyncio
+import socket
+import subprocess
+import re
 from services.ping_service import ping
 
 router = APIRouter(prefix="/ipam", tags=["ipam"])
@@ -86,9 +89,29 @@ async def scan_subnet(subnet_id: int, db: Session = Depends(get_db), current_use
     tasks = [check(ip) for ip in hosts]
     results = await asyncio.gather(*tasks)
 
+    def get_hostname(ip: str) -> str:
+        try:
+            return socket.gethostbyaddr(ip)[0]
+        except Exception:
+            return ""
+
+    def get_mac(ip: str) -> str:
+        try:
+            result = subprocess.run(
+                ["arp", "-n", ip], capture_output=True, text=True, timeout=3
+            )
+            m = re.search(r"(([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2})", result.stdout)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+        return ""
+
     discovered = []
     for ip_str, reachable in results:
         if reachable:
+            hostname = get_hostname(ip_str)
+            mac = get_mac(ip_str)
             existing = db.query(models.IPAddress).filter(models.IPAddress.address == ip_str).first()
             if not existing:
                 db_ip = models.IPAddress(
@@ -96,11 +119,18 @@ async def scan_subnet(subnet_id: int, db: Session = Depends(get_db), current_use
                     subnet_id=subnet_id,
                     status="allocated",
                     description="Discovered by scan",
+                    hostname=hostname or None,
+                    mac_address=mac or None,
                 )
                 db.add(db_ip)
-                discovered.append(ip_str)
+                discovered.append({"ip": ip_str, "hostname": hostname, "mac": mac})
             else:
                 existing.status = "allocated"
+                if hostname:
+                    existing.hostname = hostname
+                if mac:
+                    existing.mac_address = mac
+                discovered.append({"ip": ip_str, "hostname": hostname, "mac": mac})
 
     db.commit()
     return {"discovered": discovered, "total_scanned": len(hosts)}
