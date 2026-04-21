@@ -1,0 +1,11 @@
+.env
+data/db/*.db
+data/backups/
+data/files/
+data/ssh_keys/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+node_modules/
+dist/

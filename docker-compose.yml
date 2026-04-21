@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: nms-backend
+    restart: unless-stopped
+    volumes:
+      - ./data/db:/app/data
+      - ./data/backups:/app/backups
+      - ./data/files:/app/files
+      - ./data/ssh_keys:/app/ssh_keys
+    environment:
+      - DATABASE_URL=sqlite:////app/data/nms.db
+      - SECRET_KEY=${SECRET_KEY}
+      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY}
+      - BACKUP_DIR=/app/backups
+      - FILES_DIR=/app/files
+      - SSH_KEYS_DIR=/app/ssh_keys
+      - FIRST_ADMIN_USERNAME=${FIRST_ADMIN_USERNAME:-admin}
+      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-Admin1234!}
+    ports:
+      - "8000:8000"
+    networks:
+      - nms-net
+
+  frontend:
+    build: ./frontend
+    container_name: nms-frontend
+    restart: unless-stopped
+    networks:
+      - nms-net
+
+  nginx:
+    build: ./nginx
+    container_name: nms-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - nms-net
+
+networks:
+  nms-net:
+    driver: bridge
