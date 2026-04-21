@@ -27,9 +27,15 @@ async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
-    if db.query(models.User).count() == 0:
-        admin_username = os.environ.get("FIRST_ADMIN_USERNAME", "admin")
-        admin_password = os.environ.get("FIRST_ADMIN_PASSWORD", "Admin1234!")
+    admin_username = os.environ.get("FIRST_ADMIN_USERNAME", "admin")
+    admin_password = os.environ.get("FIRST_ADMIN_PASSWORD", "admin")
+
+    existing_admin = db.query(models.User).filter(models.User.username == admin_username).first()
+    if existing_admin:
+        # Always sync password from env on startup
+        existing_admin.hashed_password = hash_password(admin_password)
+        db.commit()
+    else:
         admin = models.User(
             username=admin_username,
             hashed_password=hash_password(admin_password),
