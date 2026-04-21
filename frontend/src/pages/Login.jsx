@@ -55,13 +55,12 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1.5">Password</label>
+              <label className="block text-xs text-muted mb-1.5">Password <span className="opacity-40">(optional)</span></label>
               <div className="relative">
                 <input
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
                   className="w-full bg-bg border border-border rounded-lg px-3 py-2 pr-10 text-sm text-white focus:outline-none focus:border-accent transition-colors"
                 />
                 <button
