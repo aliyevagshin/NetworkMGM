@@ -298,7 +298,6 @@ export default function Settings() {
               </tbody>
             </table>
           </div>
-        </div>
           </div>
         </div>
       )}
