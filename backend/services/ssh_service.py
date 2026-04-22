@@ -80,16 +80,16 @@ class SSHService:
                 channel.send(cmd + "\n")
                 time.sleep(0.5)
 
-            # Read until prompt or timeout (30s)
+            # Read until 3s idle (no new data) or 45s hard timeout
             raw = b""
-            deadline = time.time() + 30
+            last_recv = time.time()
+            deadline = time.time() + 45
             while time.time() < deadline:
-                time.sleep(0.3)
-                while channel.recv_ready():
+                time.sleep(0.2)
+                if channel.recv_ready():
                     raw += channel.recv(65535)
-                # stop when we see a CLI prompt at the end
-                tail = raw.decode("utf-8", errors="replace").rstrip()
-                if tail.endswith("#") or tail.endswith(">"):
+                    last_recv = time.time()
+                elif time.time() - last_recv > 3:
                     break
 
             client.close()
