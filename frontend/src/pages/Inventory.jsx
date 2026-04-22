@@ -50,6 +50,7 @@ export default function Inventory() {
   const [licenses, setLicenses] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [q, setQ] = useState("");
 
   const load = () => {
     inventoryAPI.list().then((r) => setItems(r.data));
@@ -69,15 +70,30 @@ export default function Inventory() {
     toast.success("Deleted"); load();
   };
 
+  const qLow = q.toLowerCase();
+  const filteredItems = items.filter((i) =>
+    !q || [i.name, i.model, i.vendor, i.serial_number, i.ip_address, i.location, i.device_type]
+      .some((v) => v?.toLowerCase().includes(qLow))
+  );
+  const filteredLicenses = licenses.filter((l) =>
+    !q || [l.name, l.vendor, l.license_type, l.notes]
+      .some((v) => v?.toLowerCase().includes(qLow))
+  );
+
   return (
     <Layout title="Inventory">
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-wrap">
         {["hardware", "licenses"].map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${tab === t ? "bg-accent text-white" : "text-muted border border-border hover:text-white"}`}>
             {t === "hardware" ? "Hardware" : "Licenses"}
           </button>
         ))}
+        <input
+          value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Search…"
+          className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent w-48"
+        />
         <div className="flex-1" />
         <button onClick={() => { setShowForm(true); setEditing(null); }}
           className="flex items-center gap-2 px-4 py-1.5 bg-accent text-white text-sm rounded-lg">
@@ -102,7 +118,7 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {items.map((i) => {
+                {filteredItems.map((i) => {
                   const eolPast = i.eol_date && isPast(new Date(i.eol_date));
                   return (
                     <tr key={i.id} className="hover:bg-white/2">
@@ -149,7 +165,7 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {licenses.map((l) => {
+                {filteredLicenses.map((l) => {
                   const expired = isPast(new Date(l.expiry_date));
                   return (
                     <tr key={l.id} className="hover:bg-white/2">

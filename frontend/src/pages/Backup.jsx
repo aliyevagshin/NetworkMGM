@@ -10,6 +10,7 @@ export default function Backup() {
   const [devices, setDevices] = useState([]);
   const [backups, setBackups] = useState([]);
   const [filterDevice, setFilterDevice] = useState("");
+  const [q, setQ] = useState("");
   const [viewing, setViewing] = useState(null);
   const [viewContent, setViewContent] = useState("");
 
@@ -51,10 +52,13 @@ export default function Backup() {
   };
 
   const fmt = (bytes) => bytes > 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
+  const filteredBackups = backups.filter((b) =>
+    !q || deviceName(b.device_id).toLowerCase().includes(q.toLowerCase())
+  );
 
   return (
     <Layout title="Config Backups">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <select
           value={filterDevice}
           onChange={(e) => setFilterDevice(e.target.value)}
@@ -63,7 +67,12 @@ export default function Backup() {
           <option value="">All Devices</option>
           {devices.map((d) => <option key={d.id} value={d.id}>{d.hostname}</option>)}
         </select>
-        <span className="text-sm text-muted ml-auto">{backups.length} backups</span>
+        <input
+          value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Search device…"
+          className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent w-44"
+        />
+        <span className="text-sm text-muted ml-auto">{filteredBackups.length} backups</span>
       </div>
 
       {viewing ? (
@@ -92,7 +101,7 @@ export default function Backup() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {backups.map((b) => (
+                {filteredBackups.map((b) => (
                   <tr key={b.id} className="hover:bg-white/2 transition-colors">
                     <td className="px-4 py-2.5 font-medium text-white">{deviceName(b.device_id)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-muted">
