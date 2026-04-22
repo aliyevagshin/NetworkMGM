@@ -5,25 +5,30 @@ Tam işlək Network Management System qurulub.
 - **Qovluq:** `c:\Users\A.Aliyev.3\Desktop\Network MGM project\nms\`
 - **İşlətmək:** `docker compose up --build` (nms/ qovluğundan)
 - **Brauzer:** `http://localhost`
-- **Login:** `admin` / `Admin1234!`
+- **Login:** `admin` / parolsuz (boş)
 - **Seed data:** `docker compose exec backend python seed.py`
+- **Not:** İlk `up --build`-da PostgreSQL volume yeni yaranır, data/db qovluğu artıq lazım deyil
 
 ---
 
 ## Stack
 | Qat | Texnologiya |
 |---|---|
-| Backend | Python 3.11, FastAPI 0.111, SQLAlchemy 2.0, SQLite |
+| Backend | Python 3.11, FastAPI 0.111, SQLAlchemy 2.0 |
+| Database | **PostgreSQL 16** (pool_size=10, pool_pre_ping, pool_recycle) |
+| Cache | **Redis 7** — alerts:count (10s), monitoring:devices (20s), devices:list (30s) |
+| Async loop | **uvloop** — standart asyncio-dan ~40% sürətli |
 | Auth | JWT (python-jose), bcrypt (passlib), 4 saat access token |
 | SSH | Paramiko 3.4 — WebSocket proxy, credentials heç vaxt brauzerə getmir |
 | Monitoring | pysnmp 6.1, ICMP ping, APScheduler (30s interval) |
 | Vault | AES-256 Fernet şifrələmə (PBKDF2HMAC, 480000 iter) |
 | Frontend | React 18, Vite 5, TailwindCSS 3.4 |
+| Data Fetching | **@tanstack/react-query 5** — staleTime, refetchInterval, cache deduplication |
 | Terminal | @xterm/xterm 5.5 + WebSocket |
 | Topology | ReactFlow 11 |
 | Charts | Recharts 2.12 |
 | Proxy | Nginx 1.25 (reverse proxy port 80) |
-| Deploy | Docker Compose (3 konteyner) |
+| Deploy | Docker Compose (**5 konteyner**: postgres, redis, backend, frontend, nginx) |
 
 ---
 

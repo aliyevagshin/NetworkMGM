@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { monitoringAPI, alertsAPI } from "../api";
@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { format } from "date-fns";
 import { RefreshCw, CheckCircle } from "lucide-react";
 import toast from "react-hot-toast";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 function Sparkline({ data, color = "#4f7cff" }) {
   if (!data || data.length < 2) return <span className="text-muted text-xs">—</span>;
@@ -19,17 +20,23 @@ function Sparkline({ data, color = "#4f7cff" }) {
 }
 
 export default function Monitoring() {
-  const [devices, setDevices] = useState([]);
-  const [alerts, setAlerts] = useState([]);
+  const qc = useQueryClient();
   const [metrics, setMetrics] = useState({});
-  const [loading, setLoading] = useState(true);
 
-  const load = async () => {
-    const [devRes, alertRes] = await Promise.all([monitoringAPI.all(), alertsAPI.list()]);
-    setDevices(devRes.data);
-    setAlerts(alertRes.data);
-    setLoading(false);
-  };
+  const { data: devices = [], isLoading: loading, refetch: refetchDevices } = useQuery({
+    queryKey: ["monitoring"],
+    queryFn: () => monitoringAPI.all().then(r => r.data),
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+    onSuccess: (data) => data.forEach((d) => loadMetrics(d.id)),
+  });
+
+  const { data: alerts = [], refetch: refetchAlerts } = useQuery({
+    queryKey: ["alerts"],
+    queryFn: () => alertsAPI.list().then(r => r.data),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
 
   const loadMetrics = async (deviceId) => {
     const [cpu, mem] = await Promise.all([
@@ -39,26 +46,19 @@ export default function Monitoring() {
     setMetrics((m) => ({ ...m, [deviceId]: { cpu: cpu.data, mem: mem.data } }));
   };
 
-  useEffect(() => {
-    load();
-    const iv = setInterval(load, 30000);
-    return () => clearInterval(iv);
-  }, []);
-
-  useEffect(() => {
-    devices.forEach((d) => loadMetrics(d.id));
-  }, [devices.length]);
+  const load = () => { refetchDevices(); refetchAlerts(); };
 
   const pollDevice = async (id) => {
     toast.loading("Polling...", { id: "poll" });
     await monitoringAPI.poll(id);
     toast.success("Polled", { id: "poll" });
-    load();
+    qc.invalidateQueries({ queryKey: ["monitoring"] });
   };
 
   const resolveAlert = async (id) => {
     await alertsAPI.resolve(id);
-    setAlerts((prev) => prev.filter((a) => a.id !== id));
+    qc.invalidateQueries({ queryKey: ["alerts"] });
+    qc.invalidateQueries({ queryKey: ["alert-count"] });
   };
 
   return (

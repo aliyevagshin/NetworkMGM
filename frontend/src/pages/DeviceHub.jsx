@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { devicesAPI, vaultAPI } from "../api";
 import { Plus, Trash2, Edit3, Wifi, Download, ChevronDown, ChevronUp, Cpu } from "lucide-react";
 import toast from "react-hot-toast";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const DEVICE_TYPES = ["router", "switch", "firewall", "ap", "server", "other"];
 const VENDORS = ["cisco", "cisco-asa", "mikrotik", "fortinet", "paloalto", "checkpoint", "juniper", "hp", "ubiquiti", "other"];
@@ -86,23 +87,17 @@ function DeviceForm({ initial, onSave, onCancel, vaultCreds }) {
 }
 
 export default function DeviceHub() {
-  const [devices, setDevices] = useState([]);
-  const [vaultCreds, setVaultCreds] = useState([]);
+  const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState("hostname");
   const [sortDir, setSortDir] = useState(1);
   const [filter, setFilter] = useState("");
 
-  const load = () => {
-    Promise.all([devicesAPI.list(), vaultAPI.list()]).then(([d, v]) => {
-      setDevices(d.data);
-      setVaultCreds(v.data);
-    }).finally(() => setLoading(false));
-  };
+  const { data: devices = [], isLoading: loading } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
+  const { data: vaultCreds = [] } = useQuery({ queryKey: ["vault"], queryFn: () => vaultAPI.list().then(r => r.data), staleTime: 60_000 });
 
-  useEffect(() => { load(); }, []);
+  const load = () => qc.invalidateQueries({ queryKey: ["devices"] });
 
   const handleCreate = async (data) => {
     await devicesAPI.create(data);

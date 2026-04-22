@@ -119,6 +119,10 @@ async def poll_all_devices():
 
     db.commit()
     db.close()
+    from services import cache_service
+    cache_service.invalidate("monitoring:devices")
+    cache_service.invalidate("alerts:count")
+    cache_service.invalidate_prefix("alerts:list:")
 
 
 @scheduler.scheduled_job(CronTrigger(hour=8, minute=0))

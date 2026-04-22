@@ -7,16 +7,25 @@ import models
 import schemas
 from services.ssh_service import SSHService
 from services.crypto_service import CryptoService
+from services import cache_service
 from datetime import datetime
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 ssh_service = SSHService()
 crypto = CryptoService()
 
+_CACHE_LIST = "devices:list"
+
 
 @router.get("", response_model=List[schemas.DeviceOut])
 def list_devices(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    return db.query(models.Device).all()
+    cached = cache_service.get(_CACHE_LIST)
+    if cached is not None:
+        return cached
+    devices = db.query(models.Device).all()
+    data = [schemas.DeviceOut.model_validate(d).model_dump() for d in devices]
+    cache_service.set(_CACHE_LIST, data, ttl=30)
+    return devices
 
 
 @router.post("", response_model=schemas.DeviceOut)
@@ -31,6 +40,7 @@ def create_device(
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
+    cache_service.invalidate(_CACHE_LIST)
     log_audit(db, current_user.username, "DEVICE_CREATE", device.hostname)
     return db_device
 
@@ -57,6 +67,7 @@ def update_device(
         setattr(device, k, v)
     db.commit()
     db.refresh(device)
+    cache_service.invalidate(_CACHE_LIST)
     log_audit(db, current_user.username, "DEVICE_UPDATE", device.hostname)
     return device
 
@@ -69,6 +80,7 @@ def delete_device(device_id: int, db: Session = Depends(get_db), current_user=De
     log_audit(db, current_user.username, "DEVICE_DELETE", device.hostname)
     db.delete(device)
     db.commit()
+    cache_service.invalidate(_CACHE_LIST)
     return {"ok": True}
 
 

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { devicesAPI, alertsAPI, monitoringAPI } from "../api";
 import { Server, Wifi, AlertTriangle, Activity } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -31,18 +31,10 @@ function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
 const DONUT_COLORS = { online: "#22c55e", offline: "#ef4444", unknown: "#6b7280" };
 
 export default function Dashboard() {
-  const [devices, setDevices] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [monDevices, setMonDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([devicesAPI.list(), alertsAPI.list(), monitoringAPI.all()]).then(([d, a, m]) => {
-      setDevices(d.data);
-      setAlerts(a.data);
-      setMonDevices(m.data);
-    }).finally(() => setLoading(false));
-  }, []);
+  const { data: devices = [], isLoading: loadD } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
+  const { data: alerts = [], isLoading: loadA } = useQuery({ queryKey: ["alerts"], queryFn: () => alertsAPI.list().then(r => r.data), staleTime: 15_000, refetchInterval: 30_000 });
+  const { data: monDevices = [] } = useQuery({ queryKey: ["monitoring"], queryFn: () => monitoringAPI.all().then(r => r.data), staleTime: 20_000, refetchInterval: 30_000 });
+  const loading = loadD || loadA;
 
   const online = devices.filter((d) => d.status === "online").length;
   const offline = devices.filter((d) => d.status === "offline").length;

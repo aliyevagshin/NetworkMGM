@@ -7,14 +7,21 @@ import models
 import schemas
 from services.ping_service import ping
 from services.snmp_service import poll_device_metrics
+from services import cache_service
 from datetime import datetime, timedelta
 import asyncio
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
+_CACHE_DEVICES = "monitoring:devices"
+
 
 @router.get("/devices")
 def all_devices_status(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    cached = cache_service.get(_CACHE_DEVICES)
+    if cached is not None:
+        return cached
+
     devices = db.query(models.Device).all()
     result = []
     for d in devices:
@@ -31,9 +38,10 @@ def all_devices_status(db: Session = Depends(get_db), current_user=Depends(get_c
             "hostname": d.hostname,
             "ip_address": d.ip_address,
             "status": d.status,
-            "last_seen": d.last_seen,
+            "last_seen": str(d.last_seen) if d.last_seen else None,
             "metrics": metrics,
         })
+    cache_service.set(_CACHE_DEVICES, result, ttl=20)
     return result
 
 
@@ -97,6 +105,7 @@ async def manual_poll(device_id: int, db: Session = Depends(get_db), current_use
     for s in samples:
         db.add(s)
     db.commit()
+    cache_service.invalidate(_CACHE_DEVICES)
 
     return {
         "ping": ping_result,

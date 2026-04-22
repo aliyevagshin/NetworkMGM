@@ -3,6 +3,7 @@ import Topbar from "./Topbar";
 import { useEffect } from "react";
 import { alertsAPI, authAPI } from "../api";
 import { useAlertStore, useAuthStore } from "../store";
+import { useQuery } from "@tanstack/react-query";
 
 export default function Layout({ title, children }) {
   const setCount = useAlertStore((s) => s.setCount);
@@ -10,13 +11,14 @@ export default function Layout({ title, children }) {
 
   useEffect(() => {
     authAPI.me().then((r) => setUser(r.data)).catch(() => {});
-
-    const fetchAlerts = () =>
-      alertsAPI.count().then((r) => setCount(r.data)).catch(() => {});
-    fetchAlerts();
-    const interval = setInterval(fetchAlerts, 30000);
-    return () => clearInterval(interval);
   }, []);
+
+  useQuery({
+    queryKey: ["alert-count"],
+    queryFn: () => alertsAPI.count().then((r) => { setCount(r.data); return r.data; }),
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
 
   return (
     <div className="flex min-h-screen bg-bg">

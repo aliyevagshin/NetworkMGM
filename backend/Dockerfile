@@ -15,8 +15,8 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
-RUN mkdir -p /app/data /app/backups /app/files /app/ssh_keys
+RUN mkdir -p /app/backups /app/files /app/ssh_keys
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "h11"]
