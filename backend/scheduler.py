@@ -113,8 +113,10 @@ async def poll_all_devices():
             if result.get("packet_loss") is not None:
                 db.add(models.MetricSample(device_id=device.id, metric="packet_loss", value=result["packet_loss"], timestamp=now))
 
-            if device.snmp_community and result["reachable"]:
-                snmp = await poll_device_metrics(device.ip_address, device.snmp_community, device.snmp_version or "v2c")
+            if result["reachable"]:
+                snmp = await poll_device_metrics(
+                    device.ip_address, device.snmp_community or "", device.snmp_version or "v2c"
+                )
                 for metric, value in snmp.items():
                     if metric == "simulated":
                         continue
