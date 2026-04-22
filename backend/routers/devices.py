@@ -142,11 +142,14 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
     if not config:
         return {"success": False, "error": err or "Empty config returned"}
 
+    import re as _re
     backup_dir = os.environ.get("BACKUP_DIR", "/app/backups")
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = dt.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"{device.hostname}_{timestamp}.cfg"
+    safe_name = _re.sub(r"[^\w\-]", "_", device.hostname)
+    filename = f"{safe_name}_{device.id}_{timestamp}.cfg"
     filepath = os.path.join(backup_dir, filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w") as f:
         f.write(config)
 

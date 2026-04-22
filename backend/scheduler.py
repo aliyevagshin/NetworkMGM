@@ -33,13 +33,16 @@ async def scheduled_config_backup():
         if not cred:
             continue
 
-        config = ssh_service.get_config(
+        import re as _re
+        config, _ = ssh_service.get_config(
             device.ip_address, device.ssh_port, cred["username"], cred["password"], device.vendor or "cisco"
         )
         if config:
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            filename = f"{device.hostname}_{timestamp}.cfg"
+            safe_name = _re.sub(r"[^\w\-]", "_", device.hostname)
+            filename = f"{safe_name}_{device.id}_{timestamp}.cfg"
             filepath = os.path.join(backup_dir, filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "w") as f:
                 f.write(config)
             backup = models.ConfigBackup(
