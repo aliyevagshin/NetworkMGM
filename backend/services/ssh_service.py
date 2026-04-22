@@ -80,16 +80,19 @@ class SSHService:
                 channel.send(cmd + "\n")
                 time.sleep(0.5)
 
-            # Read until 3s idle (no new data) or 45s hard timeout
+            # Wait for device to start sending before idle-timeout kicks in
+            time.sleep(2)
+
+            # Read until 5s idle after first byte, or 60s hard timeout
             raw = b""
-            last_recv = time.time()
-            deadline = time.time() + 45
+            last_recv = None
+            deadline = time.time() + 60
             while time.time() < deadline:
                 time.sleep(0.2)
                 if channel.recv_ready():
                     raw += channel.recv(65535)
                     last_recv = time.time()
-                elif time.time() - last_recv > 3:
+                elif last_recv and time.time() - last_recv > 5:
                     break
 
             client.close()

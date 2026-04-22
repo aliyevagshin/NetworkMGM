@@ -77,6 +77,16 @@ def delete_device(device_id: int, db: Session = Depends(get_db), current_user=De
     device = db.query(models.Device).filter(models.Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    # delete child records first (PostgreSQL enforces FK constraints)
+    db.query(models.MetricSample).filter(models.MetricSample.device_id == device_id).delete()
+    db.query(models.ConfigBackup).filter(models.ConfigBackup.device_id == device_id).delete()
+    db.query(models.Alert).filter(models.Alert.device_id == device_id).delete()
+    db.query(models.SSHSession).filter(models.SSHSession.device_id == device_id).delete()
+    db.query(models.LogEntry).filter(models.LogEntry.device_id == device_id).delete()
+    db.query(models.DeviceLink).filter(
+        (models.DeviceLink.source_device_id == device_id) |
+        (models.DeviceLink.target_device_id == device_id)
+    ).delete(synchronize_session=False)
     log_audit(db, current_user.username, "DEVICE_DELETE", device.hostname)
     db.delete(device)
     db.commit()
