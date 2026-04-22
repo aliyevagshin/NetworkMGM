@@ -40,28 +40,70 @@ class SSHService:
     def get_config(
         self, host: str, port: int, username: str, password: str, vendor: str
     ) -> tuple[Optional[str], Optional[str]]:
-        commands = {
-            "cisco": "terminal length 0\nshow running-config",
-            "cisco-asa": "terminal pager 0\nshow running-config",
+        import re as _re
+
+        v = vendor.lower()
+
+        # Vendors where exec_command is reliable (no interactive pager)
+        exec_commands = {
             "mikrotik": "/export compact",
-            "fortinet": "show full-configuration",
-            "hp": "terminal length 0\nshow running-config",
             "ubiquiti": "cat /tmp/system.cfg",
-            "juniper": "set cli screen-length 0\nshow configuration",
-            "paloalto": "set cli pager off\nshow config running",
-            "checkpoint": "show configuration",
         }
-        cmd = commands.get(vendor.lower(), "terminal length 0\nshow running-config")
+
+        # Vendors that need an interactive shell to disable paging first
+        shell_sequences = {
+            "cisco":     ["terminal length 0",   "show running-config"],
+            "cisco-asa": ["terminal pager 0",    "show running-config"],
+            "hp":        ["terminal length 0",   "show running-config"],
+            "fortinet":  ["config global",       "show full-configuration"],
+            "juniper":   ["set cli screen-length 0", "show configuration"],
+            "paloalto":  ["set cli pager off",   "show config running"],
+            "checkpoint":["show configuration"],
+        }
+
         try:
             client = self.connect(host, port, username, password)
-            # run each line as a separate command to handle multi-line setup
-            output_parts = []
-            for line in cmd.split("\n"):
-                stdout, _ = self.run_command(client, line)
-                output_parts.append(stdout)
+
+            if v in exec_commands:
+                stdout, stderr = self.run_command(client, exec_commands[v])
+                client.close()
+                return stdout.strip() or None, stderr.strip() or None
+
+            # Interactive shell approach
+            cmds = shell_sequences.get(v, ["terminal length 0", "show running-config"])
+            channel = client.invoke_shell(term="vt100", width=250, height=50)
+            time.sleep(1.5)
+            if channel.recv_ready():
+                channel.recv(65535)  # drain banner/prompt
+
+            for cmd in cmds:
+                channel.send(cmd + "\n")
+                time.sleep(0.5)
+
+            # Read until prompt or timeout (30s)
+            raw = b""
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                time.sleep(0.3)
+                while channel.recv_ready():
+                    raw += channel.recv(65535)
+                # stop when we see a CLI prompt at the end
+                tail = raw.decode("utf-8", errors="replace").rstrip()
+                if tail.endswith("#") or tail.endswith(">"):
+                    break
+
             client.close()
-            combined = "\n".join(output_parts).strip()
-            return combined or None, None
+
+            decoded = raw.decode("utf-8", errors="replace")
+            # strip ANSI escape codes
+            decoded = _re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", decoded)
+            # drop first line (command echo) and last line (prompt)
+            lines = decoded.splitlines()
+            if len(lines) > 2:
+                lines = lines[1:-1]
+            result = "\n".join(lines).strip()
+            return result or None, None
+
         except Exception as e:
             return None, str(e)
 
