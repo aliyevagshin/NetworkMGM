@@ -122,7 +122,7 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
     import os
     from datetime import datetime as dt
 
-    config = ssh_service.get_config(
+    config, err = ssh_service.get_config(
         host=device.ip_address,
         port=device.ssh_port,
         username=cred["username"],
@@ -130,7 +130,7 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
         vendor=device.vendor or "cisco",
     )
     if not config:
-        return {"success": False, "error": "Failed to pull config"}
+        return {"success": False, "error": err or "Empty config returned"}
 
     backup_dir = os.environ.get("BACKUP_DIR", "/app/backups")
     os.makedirs(backup_dir, exist_ok=True)

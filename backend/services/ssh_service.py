@@ -39,23 +39,31 @@ class SSHService:
 
     def get_config(
         self, host: str, port: int, username: str, password: str, vendor: str
-    ) -> Optional[str]:
+    ) -> tuple[Optional[str], Optional[str]]:
         commands = {
-            "cisco": "show running-config",
+            "cisco": "terminal length 0\nshow running-config",
+            "cisco-asa": "terminal pager 0\nshow running-config",
             "mikrotik": "/export compact",
             "fortinet": "show full-configuration",
-            "hp": "show running-config",
+            "hp": "terminal length 0\nshow running-config",
             "ubiquiti": "cat /tmp/system.cfg",
-            "juniper": "show configuration",
+            "juniper": "set cli screen-length 0\nshow configuration",
+            "paloalto": "set cli pager off\nshow config running",
+            "checkpoint": "show configuration",
         }
-        cmd = commands.get(vendor.lower(), "show running-config")
+        cmd = commands.get(vendor.lower(), "terminal length 0\nshow running-config")
         try:
             client = self.connect(host, port, username, password)
-            stdout, _ = self.run_command(client, cmd)
+            # run each line as a separate command to handle multi-line setup
+            output_parts = []
+            for line in cmd.split("\n"):
+                stdout, _ = self.run_command(client, line)
+                output_parts.append(stdout)
             client.close()
-            return stdout
-        except Exception:
-            return None
+            combined = "\n".join(output_parts).strip()
+            return combined or None, None
+        except Exception as e:
+            return None, str(e)
 
     def open_interactive_channel(
         self,
