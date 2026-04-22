@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import { backupsAPI, devicesAPI } from "../api";
-import { Download, Eye, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, Eye, RotateCcw, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
 import api from "../api";
@@ -41,6 +41,13 @@ export default function Backup() {
     } catch {
       toast.error("Restore failed");
     }
+  };
+
+  const del = async (b) => {
+    if (!window.confirm("Delete this backup?")) return;
+    await backupsAPI.delete(b.id);
+    toast.success("Backup deleted");
+    load();
   };
 
   const fmt = (bytes) => bytes > 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
@@ -106,6 +113,10 @@ export default function Backup() {
                         <button onClick={() => restore(b)}
                           className="p-1.5 text-muted hover:text-warning transition-colors" title="Restore">
                           <RotateCcw size={13} />
+                        </button>
+                        <button onClick={() => del(b)}
+                          className="p-1.5 text-muted hover:text-red-400 transition-colors" title="Delete">
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     </td>

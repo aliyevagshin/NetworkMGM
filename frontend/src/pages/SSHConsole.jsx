@@ -84,19 +84,30 @@ function SSHTerminal({ device, onClose }) {
 export default function SSHConsole() {
   const [devices, setDevices] = useState([]);
   const [active, setActive] = useState(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     devicesAPI.list().then((r) => setDevices(r.data));
   }, []);
 
+  const filtered = devices.filter((d) =>
+    !search || d.hostname.toLowerCase().includes(search.toLowerCase()) || d.ip_address.includes(search)
+  );
+
   return (
     <Layout title="SSH Console">
       <div className="flex gap-4 h-[calc(100vh-8rem)]">
-        <div className="w-56 shrink-0 bg-surface border border-border rounded-xl overflow-y-auto">
-          <div className="px-4 py-3 border-b border-border text-xs font-medium text-muted">
-            Select Device
+        <div className="w-56 shrink-0 bg-surface border border-border rounded-xl flex flex-col overflow-hidden">
+          <div className="px-3 py-2 border-b border-border">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search device..."
+              className="w-full bg-bg border border-border rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-accent"
+            />
           </div>
-          {devices.map((d) => (
+          <div className="flex-1 overflow-y-auto">
+          {filtered.map((d) => (
             <button
               key={d.id}
               onClick={() => setActive(d)}
@@ -108,6 +119,7 @@ export default function SSHConsole() {
               <div className="font-mono text-xs opacity-60 truncate">{d.ip_address}</div>
             </button>
           ))}
+          </div>
         </div>
 
         <div className="flex-1 min-w-0">

@@ -59,6 +59,22 @@ async def scheduled_config_backup():
             )
             db.add(alert)
 
+    # Auto-cleanup: keep only max_backup_count per device
+    max_setting = db.query(models.Setting).filter(models.Setting.key == "max_backup_count").first()
+    max_count = int(max_setting.value) if max_setting else 30
+    devices_with_backups = db.query(models.ConfigBackup.device_id).distinct().all()
+    for (device_id,) in devices_with_backups:
+        all_backups = (
+            db.query(models.ConfigBackup)
+            .filter(models.ConfigBackup.device_id == device_id)
+            .order_by(models.ConfigBackup.created_at.desc())
+            .all()
+        )
+        to_delete = all_backups[max_count:]
+        for b in to_delete:
+            if b.filepath and os.path.exists(b.filepath):
+                os.remove(b.filepath)
+            db.delete(b)
     db.commit()
     db.close()
 
@@ -97,6 +113,8 @@ async def poll_all_devices():
             if device.snmp_community and result["reachable"]:
                 snmp = await poll_device_metrics(device.ip_address, device.snmp_community, device.snmp_version or "v2c")
                 for metric, value in snmp.items():
+                    if metric == "simulated":
+                        continue
                     db.add(models.MetricSample(device_id=device.id, metric=metric, value=value, timestamp=now))
                     alert_info = _check_threshold(metric, value)
                     if alert_info:
@@ -123,6 +141,15 @@ async def poll_all_devices():
     cache_service.invalidate("monitoring:devices")
     cache_service.invalidate("alerts:count")
     cache_service.invalidate_prefix("alerts:list:")
+
+
+@scheduler.scheduled_job(CronTrigger(hour=3, minute=0))
+async def cleanup_old_audit_logs():
+    db = SessionLocal()
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    db.query(models.AuditLog).filter(models.AuditLog.timestamp < cutoff).delete()
+    db.commit()
+    db.close()
 
 
 @scheduler.scheduled_job(CronTrigger(hour=8, minute=0))

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import { settingsAPI, auditAPI, usersAPI, ldapAPI } from "../api";
-import { Save, Plus, Trash2, Edit3, UserCheck } from "lucide-react";
+import { Save, Plus, Trash2, Edit3, UserCheck, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
 
@@ -186,6 +186,7 @@ export default function Settings() {
   const [audit, setAudit] = useState([]);
   const [tab, setTab] = useState("settings");
   const [form, setForm] = useState({});
+  const [auditFilter, setAuditFilter] = useState({ user: "", action: "", target: "" });
 
   useEffect(() => {
     settingsAPI.get().then((r) => {
@@ -194,8 +195,17 @@ export default function Settings() {
       r.data.forEach((s) => { f[s.key] = s.value; });
       setForm(f);
     });
-    auditAPI.list(200).then((r) => setAudit(r.data));
   }, []);
+
+  useEffect(() => {
+    if (tab === "audit") {
+      const p = {};
+      if (auditFilter.user) p.user = auditFilter.user;
+      if (auditFilter.action) p.action = auditFilter.action;
+      if (auditFilter.target) p.target = auditFilter.target;
+      auditAPI.list(p).then((r) => setAudit(r.data));
+    }
+  }, [tab, auditFilter]);
 
   const save = async () => {
     await settingsAPI.update(form);
@@ -241,7 +251,28 @@ export default function Settings() {
       {tab === "ldap" && <LDAPTab />}
 
       {tab === "audit" && (
-        <div className="bg-surface border border-border rounded-xl overflow-hidden">
+        <div>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            {[["user","User"],["action","Action"],["target","Target"]].map(([k,l]) => (
+              <div key={k} className="relative">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  value={auditFilter[k]}
+                  onChange={(e) => setAuditFilter((f) => ({ ...f, [k]: e.target.value }))}
+                  placeholder={`Filter ${l}…`}
+                  className="pl-7 pr-3 py-1.5 bg-surface border border-border rounded-lg text-xs text-white focus:outline-none focus:border-accent w-40"
+                />
+              </div>
+            ))}
+            {(auditFilter.user || auditFilter.action || auditFilter.target) && (
+              <button onClick={() => setAuditFilter({ user: "", action: "", target: "" })}
+                className="text-xs text-muted hover:text-white px-2 py-1.5 border border-border rounded-lg">
+                Clear
+              </button>
+            )}
+            <span className="text-xs text-muted ml-auto">{audit.length} records · auto-deleted after 7 days</span>
+          </div>
+          <div className="bg-surface border border-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="border-b border-border">
@@ -266,6 +297,8 @@ export default function Settings() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
           </div>
         </div>
       )}

@@ -4,16 +4,20 @@ import { devicesAPI, alertsAPI, monitoringAPI } from "../api";
 import { Server, Wifi, AlertTriangle, Activity } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line,
 } from "recharts";
 
-function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
+function StatCard({ icon: Icon, label, value, sub, color = "accent", onClick }) {
   const colors = { accent: "text-accent", green: "text-green-400", amber: "text-amber-400", red: "text-red-400" };
   return (
-    <div className="bg-surface border border-border rounded-xl p-5">
+    <div
+      onClick={onClick}
+      className={`bg-surface border border-border rounded-xl p-5 ${onClick ? "cursor-pointer hover:border-accent/50 transition-colors" : ""}`}
+    >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-xs text-muted mb-1">{label}</p>
@@ -31,8 +35,9 @@ function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
 const DONUT_COLORS = { online: "#22c55e", offline: "#ef4444", unknown: "#6b7280" };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { data: devices = [], isLoading: loadD } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
-  const { data: alerts = [], isLoading: loadA } = useQuery({ queryKey: ["alerts"], queryFn: () => alertsAPI.list().then(r => r.data), staleTime: 15_000, refetchInterval: 30_000 });
+  const { data: alerts = [], isLoading: loadA } = useQuery({ queryKey: ["alerts"], queryFn: () => alertsAPI.list().then(r => r.data), staleTime: 10_000, refetchInterval: 15_000 });
   const { data: monDevices = [] } = useQuery({ queryKey: ["monitoring"], queryFn: () => monitoringAPI.all().then(r => r.data), staleTime: 20_000, refetchInterval: 30_000 });
   const loading = loadD || loadA;
 
@@ -61,9 +66,9 @@ export default function Dashboard() {
   return (
     <Layout title="Dashboard">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={Server} label="Total Devices" value={devices.length} color="accent" />
-        <StatCard icon={Wifi} label="Online" value={online} sub={`${devices.length ? Math.round((online / devices.length) * 100) : 0}% uptime`} color="green" />
-        <StatCard icon={Activity} label="Offline" value={offline} color="red" />
+        <StatCard icon={Server} label="Total Devices" value={devices.length} color="accent" onClick={() => navigate("/devices")} />
+        <StatCard icon={Wifi} label="Online" value={online} sub={`${devices.length ? Math.round((online / devices.length) * 100) : 0}% uptime`} color="green" onClick={() => navigate("/devices")} />
+        <StatCard icon={Activity} label="Offline" value={offline} color="red" onClick={() => navigate("/devices")} />
         <StatCard icon={AlertTriangle} label="Active Alerts" value={alerts.length} sub={`${critical} critical`} color="amber" />
       </div>
 

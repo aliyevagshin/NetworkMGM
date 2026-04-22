@@ -177,6 +177,7 @@ class InventoryBase(BaseModel):
     model: Optional[str] = None
     vendor: Optional[str] = None
     serial_number: Optional[str] = None
+    ip_address: Optional[str] = None
     quantity: int = 1
     device_type: Optional[str] = None
     location: Optional[str] = None

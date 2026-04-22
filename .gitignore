@@ -1,7 +1,4 @@
-data/db/*.db
-data/backups/
-data/files/
-data/ssh_keys/
+data/
 __pycache__/
 *.pyc
 *.pyo

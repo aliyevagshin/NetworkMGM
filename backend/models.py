@@ -111,6 +111,7 @@ class InventoryItem(Base):
     model = Column(String)
     vendor = Column(String)
     serial_number = Column(String)
+    ip_address = Column(String, nullable=True)
     quantity = Column(Integer, default=1)
     device_type = Column(String)
     location = Column(String)

@@ -25,14 +25,16 @@ def all_devices_status(db: Session = Depends(get_db), current_user=Depends(get_c
     devices = db.query(models.Device).all()
     result = []
     for d in devices:
-        latest = (
-            db.query(models.MetricSample)
-            .filter(models.MetricSample.device_id == d.id)
-            .order_by(models.MetricSample.timestamp.desc())
-            .limit(5)
-            .all()
-        )
-        metrics = {m.metric: m.value for m in latest}
+        metrics = {}
+        for metric_name in ("cpu", "memory", "rtt_ms", "packet_loss"):
+            sample = (
+                db.query(models.MetricSample)
+                .filter(models.MetricSample.device_id == d.id, models.MetricSample.metric == metric_name)
+                .order_by(models.MetricSample.timestamp.desc())
+                .first()
+            )
+            if sample:
+                metrics[metric_name] = sample.value
         result.append({
             "id": d.id,
             "hostname": d.hostname,
@@ -89,6 +91,8 @@ async def manual_poll(device_id: int, db: Session = Depends(get_db), current_use
     if device.snmp_community:
         snmp_metrics = await poll_device_metrics(device.ip_address, device.snmp_community, device.snmp_version or "v2c")
         for metric_name, value in snmp_metrics.items():
+            if metric_name == "simulated":
+                continue
             samples.append(models.MetricSample(device_id=device.id, metric=metric_name, value=value, timestamp=now))
 
             # Alert thresholds

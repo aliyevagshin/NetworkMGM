@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 import {
   LayoutDashboard, Server, Terminal, Network, Activity,
   BarChart2, Package, FolderOpen, Lock, FileText, Settings, LogOut,
@@ -29,12 +29,12 @@ export default function Sidebar() {
   return (
     <aside className="w-[220px] min-h-screen bg-surface border-r border-border flex flex-col shrink-0">
       <div className="px-4 py-5 border-b border-border">
-        <div className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center">
             <Network size={14} className="text-white" />
           </div>
           <span className="font-semibold text-sm text-white">NMS</span>
-        </div>
+        </Link>
       </div>
 
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">

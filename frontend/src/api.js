@@ -86,6 +86,7 @@ export const inventoryAPI = {
 export const backupsAPI = {
   list: (deviceId) => api.get("/backups", deviceId ? { params: { device_id: deviceId } } : {}),
   download: (id) => `${api.defaults.baseURL}/backups/${id}/download`,
+  delete: (id) => api.delete(`/backups/${id}`),
   restore: (deviceId, backupId) => api.post(`/backups/${deviceId}/restore`, null, { params: { backup_id: backupId } }),
 };
 
@@ -107,7 +108,7 @@ export const settingsAPI = {
 };
 
 export const auditAPI = {
-  list: (limit = 100) => api.get("/audit", { params: { limit } }),
+  list: (params = {}) => api.get("/audit", { params: { limit: 200, ...params } }),
 };
 
 export const usersAPI = {

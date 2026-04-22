@@ -49,6 +49,19 @@ def download_backup(backup_id: int, db: Session = Depends(get_db), current_user=
     return FileResponse(backup.filepath, filename=os.path.basename(backup.filepath))
 
 
+@router.delete("/{backup_id}")
+def delete_backup(backup_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    backup = db.query(models.ConfigBackup).filter(models.ConfigBackup.id == backup_id).first()
+    if not backup:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    if os.path.exists(backup.filepath):
+        os.remove(backup.filepath)
+    log_audit(db, current_user.username, "BACKUP_DELETE", backup.filepath)
+    db.delete(backup)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/{device_id}/restore")
 def restore_backup(
     device_id: int,

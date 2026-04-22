@@ -7,14 +7,14 @@ import { format, isPast } from "date-fns";
 
 function ItemForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
-    name: "", model: "", vendor: "", serial_number: "", quantity: 1,
+    name: "", model: "", vendor: "", serial_number: "", ip_address: "", quantity: 1,
     device_type: "", location: "", purchase_date: "", eol_date: "",
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(form); }}
       className="grid grid-cols-2 gap-3 bg-surface border border-border rounded-xl p-4 mb-4">
-      {[["name","Name",true],["model","Model"],["vendor","Vendor"],["serial_number","Serial #"],["location","Location"],["device_type","Type"]].map(([k,l,req]) => (
+      {[["name","Name",true],["model","Model"],["vendor","Vendor"],["serial_number","Serial #"],["ip_address","IP Address"],["location","Location"],["device_type","Type"]].map(([k,l,req]) => (
         <div key={k}>
           <label className="block text-xs text-muted mb-1">{l}</label>
           <input required={!!req} value={form[k]} onChange={(e) => set(k, e.target.value)}
@@ -95,7 +95,7 @@ export default function Inventory() {
             <table className="w-full text-sm">
               <thead className="border-b border-border">
                 <tr>
-                  {["Name","Model","Vendor","Serial","Qty","Type","Location","EOL"].map((h) => (
+                  {["Name","Model","Vendor","Serial","IP Address","Qty","Type","Location","EOL"].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted">{h}</th>
                   ))}
                   <th className="px-4 py-3" />
@@ -110,6 +110,7 @@ export default function Inventory() {
                       <td className="px-4 py-2.5 text-muted">{i.model || "—"}</td>
                       <td className="px-4 py-2.5 text-muted">{i.vendor || "—"}</td>
                       <td className="px-4 py-2.5 font-mono text-muted text-xs">{i.serial_number || "—"}</td>
+                      <td className="px-4 py-2.5 font-mono text-muted text-xs">{i.ip_address || "—"}</td>
                       <td className="px-4 py-2.5 text-muted">{i.quantity}</td>
                       <td className="px-4 py-2.5 text-muted">{i.device_type || "—"}</td>
                       <td className="px-4 py-2.5 text-muted">{i.location || "—"}</td>
