@@ -8,7 +8,6 @@ import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  LineChart, Line,
 } from "recharts";
 
 function StatCard({ icon: Icon, label, value, sub, color = "accent", onClick }) {

@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { monitoringAPI, alertsAPI } from "../api";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { format } from "date-fns";
 import { RefreshCw, CheckCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,8 +27,11 @@ export default function Monitoring() {
     queryFn: () => monitoringAPI.all().then(r => r.data),
     staleTime: 20_000,
     refetchInterval: 30_000,
-    onSuccess: (data) => data.forEach((d) => loadMetrics(d.id)),
   });
+
+  useEffect(() => {
+    devices.forEach((d) => loadMetrics(d.id));
+  }, [devices.length]);
 
   const { data: alerts = [], refetch: refetchAlerts } = useQuery({
     queryKey: ["alerts"],
