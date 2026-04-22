@@ -28,19 +28,6 @@ body {
   background: #4f7cff;
 }
 
-@media print {
-  body > * { display: none !important; }
-  #topology-print-root,
-  #topology-print-root * { display: block !important; visibility: visible !important; }
-  #topology-print-root {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    background: #0e1018 !important;
-  }
-}
-
 .xterm-viewport {
   overflow-y: auto !important;
 }
