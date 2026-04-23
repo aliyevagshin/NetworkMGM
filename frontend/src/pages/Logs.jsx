@@ -4,14 +4,17 @@ import { logsAPI, devicesAPI } from "../api";
 import { Trash2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const LEVEL_COLORS = {
-  info: "text-blue-400",
-  warning: "text-yellow-400",
-  error: "text-red-400",
+  info:     "text-blue-400",
+  warning:  "text-yellow-400",
+  error:    "text-red-400",
   critical: "text-red-500",
-  debug: "text-muted",
+  debug:    "text-muted",
 };
+
+const ROW_H = 36;
 
 export default function Logs() {
   const [logs, setLogs] = useState([]);
@@ -21,11 +24,11 @@ export default function Logs() {
   const [limit, setLimit] = useState(200);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const timerRef = useRef(null);
+  const bodyRef  = useRef(null);
 
   const load = () =>
-    logsAPI.list({ device_id: filterDevice || undefined, level: filterLevel || undefined, limit }).then((r) =>
-      setLogs(r.data)
-    );
+    logsAPI.list({ device_id: filterDevice || undefined, level: filterLevel || undefined, limit })
+      .then((r) => setLogs(r.data));
 
   useEffect(() => {
     devicesAPI.list().then((r) => setDevices(r.data));
@@ -33,9 +36,7 @@ export default function Logs() {
 
   useEffect(() => {
     load();
-    if (autoRefresh) {
-      timerRef.current = setInterval(load, 10000);
-    }
+    if (autoRefresh) timerRef.current = setInterval(load, 10_000);
     return () => clearInterval(timerRef.current);
   }, [filterDevice, filterLevel, limit, autoRefresh]);
 
@@ -46,7 +47,18 @@ export default function Logs() {
     load();
   };
 
-  const deviceName = (id) => id ? devices.find((d) => d.id === id)?.hostname || `#${id}` : "System";
+  const deviceName = (id) =>
+    id ? devices.find((d) => d.id === id)?.hostname || `#${id}` : "System";
+
+  const rowVirtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => bodyRef.current,
+    estimateSize: () => ROW_H,
+    overscan: 10,
+  });
+
+  const totalHeight  = rowVirtualizer.getTotalSize();
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   return (
     <Layout title="System Logs">
@@ -67,6 +79,7 @@ export default function Logs() {
           className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent">
           {[50,100,200,500].map((n) => <option key={n} value={n}>Last {n}</option>)}
         </select>
+        <span className="text-xs text-muted">{logs.length} entries</span>
 
         <div className="ml-auto flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
@@ -74,8 +87,7 @@ export default function Logs() {
               className="accent-accent" />
             Auto-refresh
           </label>
-          <button onClick={load}
-            className="p-1.5 text-muted hover:text-white border border-border rounded-lg">
+          <button onClick={load} className="p-1.5 text-muted hover:text-white border border-border rounded-lg">
             <RefreshCw size={13} />
           </button>
           <button onClick={clear}
@@ -86,36 +98,67 @@ export default function Logs() {
       </div>
 
       <div className="bg-surface border border-border rounded-xl overflow-hidden">
-        <div className="overflow-auto max-h-[72vh]">
-          <table className="w-full text-xs font-mono">
-            <thead className="border-b border-border sticky top-0 bg-surface">
-              <tr>
-                {["Timestamp","Level","Source","Device","Message"].map((h) => (
-                  <th key={h} className="px-3 py-2.5 text-left font-medium text-muted">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {logs.map((l) => (
-                <tr key={l.id} className="hover:bg-white/2 transition-colors">
-                  <td className="px-3 py-1.5 text-muted whitespace-nowrap">
-                    {format(new Date(l.timestamp), "yyyy-MM-dd HH:mm:ss")}
-                  </td>
-                  <td className={`px-3 py-1.5 uppercase font-bold ${LEVEL_COLORS[l.level] || "text-white"}`}>
-                    {l.level}
-                  </td>
-                  <td className="px-3 py-1.5 text-muted">{l.source}</td>
-                  <td className="px-3 py-1.5 text-white">{deviceName(l.device_id)}</td>
-                  <td className="px-3 py-1.5 text-white max-w-xl truncate">{l.message}</td>
-                </tr>
+        {/* Fixed header */}
+        <table className="w-full text-xs font-mono table-fixed">
+          <colgroup>
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "48%" }} />
+          </colgroup>
+          <thead className="border-b border-border">
+            <tr>
+              {["Timestamp","Level","Source","Device","Message"].map((h) => (
+                <th key={h} className="px-3 py-2.5 text-left font-medium text-muted">{h}</th>
               ))}
-              {logs.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-muted">No log entries found</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            </tr>
+          </thead>
+        </table>
+
+        {/* Virtual scroll body */}
+        <div ref={bodyRef} style={{ height: "65vh", overflowY: "auto" }}>
+          {logs.length === 0 ? (
+            <div className="px-4 py-10 text-center text-muted text-sm font-sans">No log entries found</div>
+          ) : (
+            <div style={{ height: totalHeight, position: "relative" }}>
+              <table className="w-full text-xs font-mono table-fixed" style={{ position: "absolute", top: 0, left: 0, width: "100%" }}>
+                <colgroup>
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "48%" }} />
+                </colgroup>
+                <tbody>
+                  {virtualItems.length > 0 && virtualItems[0].start > 0 && (
+                    <tr style={{ height: virtualItems[0].start }} />
+                  )}
+                  {virtualItems.map((vRow) => {
+                    const l = logs[vRow.index];
+                    return (
+                      <tr key={l.id} className="hover:bg-white/2 transition-colors border-b border-border/30" style={{ height: ROW_H }}>
+                        <td className="px-3 py-1 text-muted whitespace-nowrap">
+                          {format(new Date(l.timestamp), "yyyy-MM-dd HH:mm:ss")}
+                        </td>
+                        <td className={`px-3 py-1 uppercase font-bold ${LEVEL_COLORS[l.level] || "text-white"}`}>
+                          {l.level}
+                        </td>
+                        <td className="px-3 py-1 text-muted">{l.source}</td>
+                        <td className="px-3 py-1 text-white truncate">{deviceName(l.device_id)}</td>
+                        <td className="px-3 py-1 text-white truncate">{l.message}</td>
+                      </tr>
+                    );
+                  })}
+                  {virtualItems.length > 0 && (() => {
+                    const last = virtualItems[virtualItems.length - 1];
+                    const rem = totalHeight - last.end;
+                    return rem > 0 ? <tr style={{ height: rem }} /> : null;
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </Layout>

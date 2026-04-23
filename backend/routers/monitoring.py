@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from database import get_db
 from auth import get_current_user
@@ -22,27 +23,42 @@ def all_devices_status(db: Session = Depends(get_db), current_user=Depends(get_c
     if cached is not None:
         return cached
 
+    # Single query: latest value per (device_id, metric) — replaces 4N individual queries
+    subq = (
+        db.query(
+            models.MetricSample.device_id,
+            models.MetricSample.metric,
+            func.max(models.MetricSample.timestamp).label("max_ts"),
+        )
+        .group_by(models.MetricSample.device_id, models.MetricSample.metric)
+        .subquery()
+    )
+    latest = (
+        db.query(models.MetricSample)
+        .join(
+            subq,
+            (models.MetricSample.device_id == subq.c.device_id)
+            & (models.MetricSample.metric == subq.c.metric)
+            & (models.MetricSample.timestamp == subq.c.max_ts),
+        )
+        .all()
+    )
+    metrics_map: dict[int, dict] = {}
+    for s in latest:
+        metrics_map.setdefault(s.device_id, {})[s.metric] = s.value
+
     devices = db.query(models.Device).all()
-    result = []
-    for d in devices:
-        metrics = {}
-        for metric_name in ("cpu", "memory", "rtt_ms", "packet_loss"):
-            sample = (
-                db.query(models.MetricSample)
-                .filter(models.MetricSample.device_id == d.id, models.MetricSample.metric == metric_name)
-                .order_by(models.MetricSample.timestamp.desc())
-                .first()
-            )
-            if sample:
-                metrics[metric_name] = sample.value
-        result.append({
+    result = [
+        {
             "id": d.id,
             "hostname": d.hostname,
             "ip_address": d.ip_address,
             "status": d.status,
             "last_seen": str(d.last_seen) if d.last_seen else None,
-            "metrics": metrics,
-        })
+            "metrics": metrics_map.get(d.id, {}),
+        }
+        for d in devices
+    ]
     cache_service.set(_CACHE_DEVICES, result, ttl=20)
     return result
 

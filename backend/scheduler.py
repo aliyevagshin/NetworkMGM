@@ -193,9 +193,14 @@ async def poll_all_devices():
 @scheduler.scheduled_job(CronTrigger(hour=3, minute=0))
 async def cleanup_old_audit_logs():
     db = SessionLocal()
-    cutoff = datetime.utcnow() - timedelta(days=7)
-    db.query(models.AuditLog).filter(models.AuditLog.timestamp < cutoff).delete()
-    db.query(models.LogEntry).filter(models.LogEntry.timestamp < cutoff).delete()
+    cutoff_7d = datetime.utcnow() - timedelta(days=7)
+    cutoff_30d = datetime.utcnow() - timedelta(days=30)
+
+    db.query(models.AuditLog).filter(models.AuditLog.timestamp < cutoff_7d).delete()
+    db.query(models.LogEntry).filter(models.LogEntry.timestamp < cutoff_7d).delete()
+    # MetricSample rows older than 30 days — prevent unbounded table growth
+    deleted = db.query(models.MetricSample).filter(models.MetricSample.timestamp < cutoff_30d).delete()
+    _write_log(db, "info", f"Retention cleanup: removed {deleted} metric samples older than 30 days")
     db.commit()
     db.close()
 

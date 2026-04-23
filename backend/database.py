@@ -15,10 +15,11 @@ if _is_sqlite:
 else:
     engine = create_engine(
         DATABASE_URL,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=20,        # support ~30 concurrent scheduler polls
+        max_overflow=30,
         pool_pre_ping=True,
         pool_recycle=300,
+        pool_timeout=20,
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

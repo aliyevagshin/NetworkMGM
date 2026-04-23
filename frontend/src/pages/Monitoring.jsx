@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { monitoringAPI, alertsAPI } from "../api";
@@ -8,16 +8,15 @@ import {
 import { RefreshCw, CheckCircle, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
 
 function Sparkline({ data, color = "#4f7cff" }) {
-  if (!data || data.length < 2) return <span className="text-muted text-xs">—</span>;
+  if (!data || data.length < 2) return <span className="text-xs text-muted">—</span>;
   return (
-    <ResponsiveContainer width={80} height={30}>
-      <LineChart data={data}>
-        <Line type="monotone" dataKey="value" stroke={color} dot={false} strokeWidth={1.5} />
-      </LineChart>
-    </ResponsiveContainer>
+    <LineChart width={80} height={28} data={data}>
+      <Line type="monotone" dataKey="value" stroke={color} dot={false} strokeWidth={1.5} />
+    </LineChart>
   );
 }
 
@@ -41,7 +40,7 @@ function MetricModal({ device, metric, onClose }) {
 
   const color = metric === "cpu" ? "#4f7cff" : "#22c55e";
   const label = metric === "cpu" ? "CPU %" : metric === "memory" ? "Memory %" : metric === "rtt_ms" ? "RTT (ms)" : "Packet Loss %";
-  const unit = metric === "rtt_ms" ? "ms" : "%";
+  const unit  = metric === "rtt_ms" ? "ms" : "%";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -53,7 +52,6 @@ function MetricModal({ device, metric, onClose }) {
           </div>
           <button onClick={onClose} className="text-muted hover:text-white transition-colors"><X size={18} /></button>
         </div>
-
         {loading ? (
           <div className="h-64 flex items-center justify-center text-muted text-sm">Loading...</div>
         ) : data.length === 0 ? (
@@ -73,7 +71,6 @@ function MetricModal({ device, metric, onClose }) {
             </LineChart>
           </ResponsiveContainer>
         )}
-
         {data.length > 0 && (
           <div className="flex gap-6 mt-3 text-xs text-muted border-t border-border pt-3">
             <span>Min: <span className="text-white">{Math.min(...data.map(d => d.value))}{unit}</span></span>
@@ -87,21 +84,20 @@ function MetricModal({ device, metric, onClose }) {
   );
 }
 
+const ROW_HEIGHT = 48;
+
 export default function Monitoring() {
   const qc = useQueryClient();
-  const [metrics, setMetrics] = useState({});
-  const [chart, setChart] = useState(null); // { device, metric }
+  const [sparklines, setSparklines] = useState({});
+  const [chart, setChart] = useState(null);
+  const tableRef = useRef(null);
 
-  const { data: devices = [], isLoading: loading, refetch: refetchDevices } = useQuery({
+  const { data: devices = [], isLoading, refetch: refetchDevices } = useQuery({
     queryKey: ["monitoring"],
     queryFn: () => monitoringAPI.all().then(r => r.data),
     staleTime: 20_000,
     refetchInterval: 30_000,
   });
-
-  useEffect(() => {
-    devices.forEach((d) => loadMetrics(d.id));
-  }, [devices.length]);
 
   const { data: alerts = [], refetch: refetchAlerts } = useQuery({
     queryKey: ["alerts"],
@@ -110,13 +106,30 @@ export default function Monitoring() {
     refetchInterval: 30_000,
   });
 
-  const loadMetrics = async (deviceId) => {
-    const [cpu, mem] = await Promise.all([
-      monitoringAPI.metrics(deviceId, "cpu", 2),
-      monitoringAPI.metrics(deviceId, "memory", 2),
-    ]);
-    setMetrics((m) => ({ ...m, [deviceId]: { cpu: cpu.data, mem: mem.data } }));
-  };
+  // Load sparklines in batches as devices arrive
+  useEffect(() => {
+    if (!devices.length) return;
+    const missing = devices.filter(d => !sparklines[d.id]);
+    if (!missing.length) return;
+    // Batch: load 10 at a time to avoid flooding
+    const batch = missing.slice(0, 10);
+    batch.forEach(d => {
+      Promise.all([
+        monitoringAPI.metrics(d.id, "cpu", 2),
+        monitoringAPI.metrics(d.id, "memory", 2),
+      ]).then(([cpu, mem]) => {
+        setSparklines(prev => ({ ...prev, [d.id]: { cpu: cpu.data, mem: mem.data } }));
+      }).catch(() => {});
+    });
+  }, [devices.length, sparklines]);
+
+  // Virtual scroll for device table
+  const rowVirtualizer = useVirtualizer({
+    count: devices.length,
+    getScrollElement: () => tableRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 8,
+  });
 
   const load = () => { refetchDevices(); refetchAlerts(); };
 
@@ -133,80 +146,130 @@ export default function Monitoring() {
     qc.invalidateQueries({ queryKey: ["alert-count"] });
   };
 
+  const totalHeight = rowVirtualizer.getTotalSize();
+  const virtualItems = rowVirtualizer.getVirtualItems();
+
   return (
     <Layout title="Monitoring">
       {chart && <MetricModal device={chart.device} metric={chart.metric} onClose={() => setChart(null)} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2">
-          <div className="bg-surface border border-border rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-              <span className="font-semibold text-white text-sm">Device Status</span>
+          <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
+              <span className="font-semibold text-white text-sm">
+                Device Status {devices.length > 0 && <span className="text-muted font-normal">({devices.length})</span>}
+              </span>
               <button onClick={load} className="text-muted hover:text-white transition-colors">
                 <RefreshCw size={13} />
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+
+            {/* Fixed header */}
+            <div className="overflow-x-auto shrink-0">
+              <table className="w-full text-sm table-fixed" style={{ minWidth: 640 }}>
+                <colgroup>
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "6%" }} />
+                </colgroup>
                 <thead className="border-b border-border">
                   <tr>
-                    {["Device","IP","Status","CPU","Memory","RTT","Loss","Actions"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-muted">{h}</th>
+                    {["Device","IP","Status","CPU","Memory","RTT","Loss",""].map((h, i) => (
+                      <th key={i} className="px-3 py-3 text-left text-xs font-medium text-muted">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {loading ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
-                  ) : devices.map((d) => {
-                    const m = d.metrics || {};
-                    const dm = metrics[d.id] || {};
-                    return (
-                      <tr key={d.id} className="hover:bg-white/2 transition-colors">
-                        <td className="px-4 py-3 font-mono text-white">{d.hostname}</td>
-                        <td className="px-4 py-3 font-mono text-muted">{d.ip_address}</td>
-                        <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
-                        <td className="px-4 py-3 cursor-pointer group" onClick={() => setChart({ device: d, metric: "cpu" })} title="Click to view chart">
-                          <div className="flex items-center gap-2">
-                            <Sparkline data={dm.cpu} color={m.cpu > 90 ? "#ef4444" : "#4f7cff"} />
-                            <span className="text-xs text-muted group-hover:text-accent transition-colors">
-                              {m.cpu != null ? `${m.cpu.toFixed(0)}%` : "—"}
-                              {m.simulated && <span className="ml-1 text-muted/50" title="Simulated">~</span>}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 cursor-pointer group" onClick={() => setChart({ device: d, metric: "memory" })} title="Click to view chart">
-                          <div className="flex items-center gap-2">
-                            <Sparkline data={dm.mem} color={m.memory > 90 ? "#ef4444" : "#22c55e"} />
-                            <span className="text-xs text-muted group-hover:text-accent transition-colors">
-                              {m.memory != null ? `${m.memory.toFixed(0)}%` : "—"}
-                              {m.simulated && <span className="ml-1 text-muted/50" title="Simulated">~</span>}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs font-mono text-muted cursor-pointer hover:text-accent" onClick={() => setChart({ device: d, metric: "rtt_ms" })} title="Click to view chart">
-                          {m.rtt_ms != null ? `${m.rtt_ms.toFixed(1)}ms` : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-mono text-muted cursor-pointer hover:text-accent" onClick={() => setChart({ device: d, metric: "packet_loss" })} title="Click to view chart">
-                          {m.packet_loss != null ? `${m.packet_loss.toFixed(0)}%` : "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button onClick={() => pollDevice(d.id)}
-                            className="p-1.5 text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors" title="Poll now">
-                            <RefreshCw size={12} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
               </table>
+            </div>
+
+            {/* Virtualised body */}
+            <div
+              ref={tableRef}
+              className="overflow-y-auto overflow-x-auto"
+              style={{ height: Math.min(devices.length * ROW_HEIGHT + 2, 480) || 120 }}
+            >
+              {isLoading ? (
+                <div className="px-4 py-8 text-center text-muted text-sm">Loading...</div>
+              ) : (
+                <div style={{ height: totalHeight, position: "relative" }}>
+                  <table className="w-full text-sm table-fixed" style={{ minWidth: 640 }}>
+                    <colgroup>
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "16%" }} />
+                      <col style={{ width: "16%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "6%" }} />
+                    </colgroup>
+                    <tbody>
+                      {/* spacer top */}
+                      {virtualItems.length > 0 && virtualItems[0].start > 0 && (
+                        <tr style={{ height: virtualItems[0].start }} />
+                      )}
+                      {virtualItems.map((vRow) => {
+                        const d = devices[vRow.index];
+                        const m = d.metrics || {};
+                        const dm = sparklines[d.id] || {};
+                        return (
+                          <tr key={d.id} className="hover:bg-white/2 transition-colors border-b border-border/50" style={{ height: ROW_HEIGHT }}>
+                            <td className="px-3 py-2 font-mono text-white text-xs truncate">{d.hostname}</td>
+                            <td className="px-3 py-2 font-mono text-muted text-xs truncate">{d.ip_address}</td>
+                            <td className="px-3 py-2"><StatusBadge status={d.status} /></td>
+                            <td className="px-3 py-2 cursor-pointer group" onClick={() => setChart({ device: d, metric: "cpu" })} title="Click to chart">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkline data={dm.cpu} color={m.cpu > 90 ? "#ef4444" : "#4f7cff"} />
+                                <span className="text-xs text-muted group-hover:text-accent">
+                                  {m.cpu != null ? `${m.cpu.toFixed(0)}%` : "—"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 cursor-pointer group" onClick={() => setChart({ device: d, metric: "memory" })} title="Click to chart">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkline data={dm.mem} color={m.memory > 90 ? "#ef4444" : "#22c55e"} />
+                                <span className="text-xs text-muted group-hover:text-accent">
+                                  {m.memory != null ? `${m.memory.toFixed(0)}%` : "—"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-xs font-mono text-muted cursor-pointer hover:text-accent" onClick={() => setChart({ device: d, metric: "rtt_ms" })}>
+                              {m.rtt_ms != null ? `${m.rtt_ms.toFixed(1)}ms` : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-xs font-mono text-muted cursor-pointer hover:text-accent" onClick={() => setChart({ device: d, metric: "packet_loss" })}>
+                              {m.packet_loss != null ? `${m.packet_loss.toFixed(0)}%` : "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              <button onClick={() => pollDevice(d.id)}
+                                className="p-1 text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors" title="Poll now">
+                                <RefreshCw size={11} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* spacer bottom */}
+                      {virtualItems.length > 0 && (() => {
+                        const last = virtualItems[virtualItems.length - 1];
+                        const remaining = totalHeight - last.end;
+                        return remaining > 0 ? <tr style={{ height: remaining }} /> : null;
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col">
-          <div className="px-5 py-4 border-b border-border">
+          <div className="px-5 py-4 border-b border-border shrink-0">
             <span className="font-semibold text-white text-sm">Active Alerts ({alerts.length})</span>
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-border">
