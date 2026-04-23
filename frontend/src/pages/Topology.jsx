@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import ReactFlow, {
   Background, Controls, MiniMap,
   useNodesState, useEdgesState,
   EdgeLabelRenderer, getBezierPath, Handle, Position,
-  useReactFlow, ReactFlowProvider,
+  useReactFlow, ReactFlowProvider, useEdges,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import Layout from "../components/Layout";
@@ -108,14 +108,20 @@ const WafSVG = ({ color, size=36 }) => (
   </svg>
 );
 
-// AP: pole with wireless arcs (Cisco style)
+// AP: Cisco-style omnidirectional AP (disk + radiating waves)
 const APSVG = ({ color, size=36 }) => (
   <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-    <line x1="20" y1="16" x2="20" y2="38" stroke={color} strokeWidth="2" strokeLinecap="round"/>
-    <line x1="14" y1="38" x2="26" y2="38" stroke={color} strokeWidth="2" strokeLinecap="round"/>
-    <circle cx="20" cy="16" r="3" fill={color}/>
-    <path d="M11 22 Q20 12 29 22" stroke={color} strokeWidth="2" strokeLinecap="round" fill="none"/>
-    <path d="M5  27 Q20 6  35 27" stroke={color} strokeWidth="1.6" strokeLinecap="round" fill="none" opacity="0.55"/>
+    {/* Device body - flat disk */}
+    <ellipse cx="20" cy="32" rx="11" ry="3.5" stroke={color} strokeWidth="2"/>
+    <line x1="9" y1="32" x2="9" y2="30" stroke={color} strokeWidth="1.5"/>
+    <line x1="31" y1="32" x2="31" y2="30" stroke={color} strokeWidth="1.5"/>
+    <path d="M9 30 Q20 26 31 30" stroke={color} strokeWidth="1.8" fill="none"/>
+    {/* Antenna */}
+    <line x1="20" y1="26" x2="20" y2="18" stroke={color} strokeWidth="2" strokeLinecap="round"/>
+    {/* Wireless waves emanating from top */}
+    <path d="M14 18 Q20 12 26 18" stroke={color} strokeWidth="2" strokeLinecap="round" fill="none"/>
+    <path d="M9  14 Q20 5  31 14" stroke={color} strokeWidth="1.6" strokeLinecap="round" fill="none" opacity="0.55"/>
+    <circle cx="20" cy="18" r="2" fill={color}/>
   </svg>
 );
 
@@ -240,6 +246,18 @@ function DiagramNode({ id, data, selected }) {
   const scale   = data.scale || 1;
   const iconSz  = Math.round(32 * scale);
 
+  // Count used ports from live edge state (no prop drilling needed)
+  const allEdges = useEdges();
+  const usedPorts = useMemo(() => {
+    const used = new Set();
+    allEdges.forEach((e) => {
+      if (e.source === id && e.data?.src_port) used.add(e.data.src_port);
+      if (e.target === id && e.data?.dst_port) used.add(e.data.dst_port);
+    });
+    return used;
+  }, [allEdges, id]);
+  const available = ports.length - usedPorts.size;
+
   // Split ports: >8 → top half on top edge, bottom half on bottom edge
   const topPorts = ports.length > 8 ? ports.slice(0, Math.ceil(ports.length / 2)) : [];
   const btmPorts = ports.length > 8 ? ports.slice(Math.ceil(ports.length / 2))    : ports;
@@ -279,7 +297,9 @@ function DiagramNode({ id, data, selected }) {
         <Icon color={color} size={iconSz}/>
         <div className="text-[11px] font-mono text-white font-semibold text-center leading-tight" style={{ maxWidth: iconSz * 3.5 }}>{data.label || DEVICE_LABELS[data.device_type] || data.device_type}</div>
         {data.ip && <div className="text-[10px] font-mono text-muted">{data.ip}</div>}
-        <div className="text-[9px] text-muted/40">{ports.length}p</div>
+        <div className="text-[9px]" style={{ color: available === 0 ? "#ef4444" : available <= 2 ? "#f59e0b" : "#6b7280" }}>
+          {available}/{ports.length} free
+        </div>
       </div>
 
       {/* Port dot indicators */}
@@ -295,23 +315,58 @@ function DiagramNode({ id, data, selected }) {
   );
 }
 
-/* ─── Custom cable edge ─── */
+/* ─── Custom cable edge — port labels at each end, middle label ─── */
 function CableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, style, selected }) {
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [path, midX, midY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   const ct = CABLE_TYPES[data?.cable_type] || CABLE_TYPES.ethernet;
+
+  // Port label positions: 14% from source end, 86% from source (=14% from target)
+  const t1 = 0.14, t2 = 0.86;
+  const srcLx = sourceX + (targetX - sourceX) * t1;
+  const srcLy = sourceY + (targetY - sourceY) * t1;
+  const dstLx = sourceX + (targetX - sourceX) * t2;
+  const dstLy = sourceY + (targetY - sourceY) * t2;
+
+  const portLabelStyle = (x, y) => ({
+    position: "absolute",
+    transform: `translate(-50%,-50%) translate(${x}px,${y}px)`,
+    pointerEvents: "all",
+  });
+
   return (
     <>
-      <path id={id} style={{ ...style, strokeWidth: selected ? 3 : 2, stroke: ct.color, strokeDasharray: ct.dash || undefined }}
+      <path id={id}
+        style={{ ...style, strokeWidth: selected ? 3 : 2, stroke: ct.color, strokeDasharray: ct.dash || undefined, cursor: "pointer" }}
         className="react-flow__edge-path" d={path} markerEnd={markerEnd}/>
-      {(data?.src_port || data?.dst_port || data?.label) && (
-        <EdgeLabelRenderer>
-          <div style={{ position:"absolute", transform:`translate(-50%,-50%) translate(${lx}px,${ly}px)`, pointerEvents:"all" }}
-            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1.5 py-0.5 whitespace-nowrap select-none"
-            style={{ color: ct.color + "dd" }}>
-            {data.label || [data.src_port, data.dst_port].filter(Boolean).join(" ↔ ")}
+      {/* Wide invisible hit-area so edge is easy to click */}
+      <path style={{ stroke: "transparent", strokeWidth: 12, fill: "none", cursor: "pointer" }} d={path}/>
+
+      <EdgeLabelRenderer>
+        {/* Source port label */}
+        {data?.src_port && (
+          <div style={portLabelStyle(srcLx, srcLy)}
+            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1 py-0.5 whitespace-nowrap select-none"
+            style={{ color: ct.color }}>
+            {data.src_port}
           </div>
-        </EdgeLabelRenderer>
-      )}
+        )}
+        {/* Middle label (subnet / description) */}
+        {data?.label && (
+          <div style={portLabelStyle(midX, midY)}
+            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1 py-0.5 whitespace-nowrap select-none"
+            style={{ color: ct.color + "cc" }}>
+            {data.label}
+          </div>
+        )}
+        {/* Target port label */}
+        {data?.dst_port && (
+          <div style={portLabelStyle(dstLx, dstLy)}
+            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1 py-0.5 whitespace-nowrap select-none"
+            style={{ color: ct.color }}>
+            {data.dst_port}
+          </div>
+        )}
+      </EdgeLabelRenderer>
     </>
   );
 }
@@ -435,9 +490,18 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
 
   /* edge click → show edge panel */
   const onEdgeClick = useCallback((_, edge) => {
-    setSelectedEdge(edge);
+    setSelectedEdge((prev) => prev?.id === edge.id ? null : edge); // toggle
     setSelectedId(null);
   }, []);
+
+  /* edge double-click → instant delete with confirm */
+  const onEdgeDoubleClick = useCallback((_, edge) => {
+    if (confirm("Delete this cable?")) {
+      setEdges((es) => es.filter((e) => e.id !== edge.id));
+      setSelectedEdge(null);
+      triggerSave();
+    }
+  }, [triggerSave]);
 
   const deleteEdge = useCallback((edgeId) => {
     setEdges((es) => es.filter((e) => e.id !== edgeId));
@@ -526,6 +590,7 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
             onNodeDragStop={() => triggerSave()}
             onConnect={onConnect}
             onEdgeClick={onEdgeClick}
+            onEdgeDoubleClick={onEdgeDoubleClick}
             onPaneClick={() => { setSelectedId(null); setSelectedEdge(null); }}
             onDrop={onDrop} onDragOver={onDragOver}
             nodeTypes={nodeTypes} edgeTypes={edgeTypes}
@@ -604,33 +669,33 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
               <span className="text-xs font-semibold text-white">Cable</span>
               <button onClick={() => setSelectedEdge(null)} className="text-muted hover:text-white"><X size={13}/></button>
             </div>
-            {/* Cable type info */}
             {(() => {
               const ct = CABLE_TYPES[selectedEdge.data?.cable_type] || CABLE_TYPES.ethernet;
               return (
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full shrink-0" style={{ background: ct.color }}/>
+                  <span className="w-3 h-0.5 rounded shrink-0" style={{ background: ct.color }}/>
                   <span className="text-xs text-white">{ct.label}</span>
                 </div>
               );
             })()}
-            {/* Port info */}
             {(selectedEdge.data?.src_port || selectedEdge.data?.dst_port) && (
-              <div className="text-[10px] font-mono text-muted bg-white/5 rounded px-2 py-1.5">
-                {[selectedEdge.data.src_port, selectedEdge.data.dst_port].filter(Boolean).join(" ↔ ")}
+              <div className="text-[10px] font-mono text-muted bg-white/5 rounded px-2 py-1.5 leading-relaxed">
+                {selectedEdge.data.src_port && <div><span className="text-muted/50">src:</span> {selectedEdge.data.src_port}</div>}
+                {selectedEdge.data.dst_port && <div><span className="text-muted/50">dst:</span> {selectedEdge.data.dst_port}</div>}
               </div>
             )}
-            {/* Label edit */}
             <div>
-              <label className="text-[10px] text-muted mb-1 block">Label</label>
-              <input defaultValue={selectedEdge.data?.label||""}
+              <label className="text-[10px] text-muted mb-1 block">Middle label</label>
+              <input key={selectedEdge.id} defaultValue={selectedEdge.data?.label||""}
                 onBlur={(e) => updateEdgeLabel(selectedEdge.id, e.target.value)}
-                className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" placeholder="Optional label…"/>
+                className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" placeholder="e.g. 10.1.102.0/24"/>
             </div>
+            {/* Primary action: delete */}
             <button onClick={() => deleteEdge(selectedEdge.id)}
-              className="mt-auto flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs rounded-lg transition-colors">
-              <Trash2 size={11}/> Delete Cable
+              className="flex items-center justify-center gap-1.5 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-medium rounded-lg transition-colors border border-red-500/20">
+              <Trash2 size={12}/> Delete Cable
             </button>
+            <p className="text-[9px] text-muted/40 text-center">or double-click cable</p>
           </div>
         )}
       </div>
