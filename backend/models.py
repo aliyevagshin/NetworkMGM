@@ -215,6 +215,15 @@ class KeyPassEntry(Base):
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
 
 
+class TopologyProject(Base):
+    __tablename__ = "topology_projects"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, default="New Topology")
+    data = Column(Text, default="{}")  # JSON: {nodes: [], edges: []}
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class LDAPConfig(Base):
     __tablename__ = "ldap_config"
     id = Column(Integer, primary_key=True)

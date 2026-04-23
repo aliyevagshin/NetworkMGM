@@ -25,6 +25,7 @@ from routers.topology_links import router as topology_links_router
 from routers.logs import router as logs_router
 from routers.keypass import router as keypass_router
 from routers.ldap import router as ldap_router
+from routers.topologies import router as topologies_router
 
 
 @asynccontextmanager
@@ -91,6 +92,7 @@ app.include_router(topology_links_router)
 app.include_router(logs_router)
 app.include_router(keypass_router)
 app.include_router(ldap_router)
+app.include_router(topologies_router)
 
 
 @app.get("/health")

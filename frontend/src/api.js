@@ -147,4 +147,12 @@ export const ldapAPI = {
   test: (username, password) => api.post("/ldap/test", null, { params: { username, password } }),
 };
 
+export const topologiesAPI = {
+  list: () => api.get("/topologies"),
+  create: (data) => api.post("/topologies", data),
+  get: (id) => api.get(`/topologies/${id}`),
+  update: (id, data) => api.put(`/topologies/${id}`, data),
+  delete: (id) => api.delete(`/topologies/${id}`),
+};
+
 export default api;
