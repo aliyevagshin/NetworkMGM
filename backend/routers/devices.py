@@ -5,10 +5,25 @@ from database import get_db
 from auth import get_current_user, log_audit
 import models
 import schemas
+import os
+import re as _re
 from services.ssh_service import SSHService
 from services.crypto_service import CryptoService
 from services import cache_service
 from datetime import datetime
+
+
+def _cleanup_device_backups(db, device_id: int, max_count: int = 3):
+    backups = (
+        db.query(models.ConfigBackup)
+        .filter(models.ConfigBackup.device_id == device_id)
+        .order_by(models.ConfigBackup.created_at.desc())
+        .all()
+    )
+    for b in backups[max_count:]:
+        if b.filepath and os.path.exists(b.filepath):
+            os.remove(b.filepath)
+        db.delete(b)
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 ssh_service = SSHService()
@@ -112,11 +127,13 @@ def test_ssh(device_id: int, db: Session = Depends(get_db), current_user=Depends
         client.close()
         device.status = "online"
         device.last_seen = datetime.utcnow()
+        db.add(models.LogEntry(device_id=device.id, level="info", source="ssh", message=f"SSH test by {current_user.username} succeeded"))
         db.commit()
         log_audit(db, current_user.username, "SSH_TEST", device.hostname, "Success")
         return {"success": True}
     except Exception as e:
         device.status = "offline"
+        db.add(models.LogEntry(device_id=device.id, level="error", source="ssh", message=f"SSH test by {current_user.username} failed: {e}"))
         db.commit()
         return {"success": False, "error": str(e)}
 
@@ -129,7 +146,6 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
     cred = _get_credential(db, device)
     if not cred:
         return {"success": False, "error": "No credentials"}
-    import os
     from datetime import datetime as dt
 
     config, err = ssh_service.get_config(
@@ -142,7 +158,6 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
     if not config:
         return {"success": False, "error": err or "Empty config returned"}
 
-    import re as _re
     backup_dir = os.environ.get("BACKUP_DIR", "/app/backups")
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = dt.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -161,6 +176,10 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
     )
     db.add(backup)
     device.last_backup = dt.utcnow()
+    db.commit()
+    # keep only 3 backups per device
+    _cleanup_device_backups(db, device.id, max_count=3)
+    db.add(models.LogEntry(device_id=device.id, level="info", source="ssh", message=f"Config pulled manually by {current_user.username}, saved to {filename}"))
     db.commit()
     log_audit(db, current_user.username, "CONFIG_PULL", device.hostname, f"Saved to {filename}")
     return {"success": True, "filepath": filepath}

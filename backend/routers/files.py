@@ -19,6 +19,22 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+@router.get("/folders")
+def list_folders(folder: str = Query("/"), current_user=Depends(get_current_user)):
+    """List immediate subdirectories of the given folder."""
+    folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
+    subfolders = []
+    if os.path.exists(folder_path):
+        try:
+            for item in os.scandir(folder_path):
+                if item.is_dir():
+                    path = (folder.rstrip("/") + "/" + item.name)
+                    subfolders.append({"name": item.name, "path": path})
+        except PermissionError:
+            pass
+    return subfolders
+
+
 @router.get("", response_model=List[schemas.FileEntryOut])
 def list_files(folder: str = Query("/"), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return db.query(models.FileEntry).filter(models.FileEntry.folder == folder).all()

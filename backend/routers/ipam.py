@@ -69,6 +69,56 @@ def create_address(addr: schemas.IPAddressCreate, db: Session = Depends(get_db),
     return db_addr
 
 
+def _get_hostname(ip: str) -> str:
+    try:
+        return socket.gethostbyaddr(ip)[0]
+    except Exception:
+        return ""
+
+
+def _get_mac(ip: str) -> str:
+    """Try multiple methods to get MAC address for an IP."""
+    mac_pattern = re.compile(r"(([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2})")
+
+    # Method 1: ip neigh show (modern Linux, inside Docker)
+    try:
+        result = subprocess.run(
+            ["ip", "neigh", "show", ip],
+            capture_output=True, text=True, timeout=3
+        )
+        m = mac_pattern.search(result.stdout)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+
+    # Method 2: arp -n (classic Linux/net-tools)
+    try:
+        result = subprocess.run(
+            ["arp", "-n", ip],
+            capture_output=True, text=True, timeout=3
+        )
+        m = mac_pattern.search(result.stdout)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+
+    # Method 3: parse /proc/net/arp
+    try:
+        with open("/proc/net/arp") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == ip:
+                    mac = parts[3]
+                    if mac_pattern.match(mac) and mac != "00:00:00:00:00:00":
+                        return mac
+    except Exception:
+        pass
+
+    return ""
+
+
 @router.post("/scan/{subnet_id}")
 async def scan_subnet(subnet_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     subnet = db.query(models.Subnet).filter(models.Subnet.id == subnet_id).first()
@@ -82,55 +132,53 @@ async def scan_subnet(subnet_id: int, db: Session = Depends(get_db), current_use
 
     hosts = list(network.hosts())[:254]
 
+    # Semaphore to limit concurrency
+    sem = asyncio.Semaphore(30)
+
     async def check(ip):
-        result = await ping(str(ip), count=1)
-        return str(ip), result["reachable"]
+        async with sem:
+            result = await ping(str(ip), count=1)
+            return str(ip), result["reachable"]
 
-    tasks = [check(ip) for ip in hosts]
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*[check(ip) for ip in hosts])
 
-    def get_hostname(ip: str) -> str:
-        try:
-            return socket.gethostbyaddr(ip)[0]
-        except Exception:
-            return ""
+    reachable_ips = [ip for ip, ok in results if ok]
 
-    def get_mac(ip: str) -> str:
-        try:
-            result = subprocess.run(
-                ["arp", "-n", ip], capture_output=True, text=True, timeout=3
-            )
-            m = re.search(r"(([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2})", result.stdout)
-            if m:
-                return m.group(1)
-        except Exception:
-            pass
-        return ""
+    # After pinging, ARP cache should be populated — get MACs in thread pool
+    loop = asyncio.get_event_loop()
+
+    async def enrich(ip_str):
+        hostname = await loop.run_in_executor(None, _get_hostname, ip_str)
+        mac = await loop.run_in_executor(None, _get_mac, ip_str)
+        return ip_str, hostname, mac
+
+    enriched = await asyncio.gather(*[enrich(ip) for ip in reachable_ips])
 
     discovered = []
-    for ip_str, reachable in results:
-        if reachable:
-            hostname = get_hostname(ip_str)
-            mac = get_mac(ip_str)
-            existing = db.query(models.IPAddress).filter(models.IPAddress.address == ip_str).first()
-            if not existing:
-                db_ip = models.IPAddress(
-                    address=ip_str,
-                    subnet_id=subnet_id,
-                    status="allocated",
-                    description="Discovered by scan",
-                    hostname=hostname or None,
-                    mac_address=mac or None,
-                )
-                db.add(db_ip)
-                discovered.append({"ip": ip_str, "hostname": hostname, "mac": mac})
-            else:
-                existing.status = "allocated"
-                if hostname:
-                    existing.hostname = hostname
-                if mac:
-                    existing.mac_address = mac
-                discovered.append({"ip": ip_str, "hostname": hostname, "mac": mac})
+    for ip_str, hostname, mac in enriched:
+        existing = db.query(models.IPAddress).filter(models.IPAddress.address == ip_str).first()
+        if not existing:
+            db_ip = models.IPAddress(
+                address=ip_str,
+                subnet_id=subnet_id,
+                status="allocated",
+                description="Discovered by scan",
+                hostname=hostname or None,
+                mac_address=mac or None,
+            )
+            db.add(db_ip)
+        else:
+            existing.status = "allocated"
+            if hostname:
+                existing.hostname = hostname
+            if mac:
+                existing.mac_address = mac
+        discovered.append({"ip": ip_str, "hostname": hostname, "mac": mac})
 
+    db.add(models.LogEntry(
+        level="info",
+        source="ipam",
+        message=f"Subnet scan {subnet.cidr}: {len(discovered)}/{len(hosts)} hosts discovered",
+    ))
     db.commit()
     return {"discovered": discovered, "total_scanned": len(hosts)}

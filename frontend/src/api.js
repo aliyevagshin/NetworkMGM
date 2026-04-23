@@ -92,6 +92,7 @@ export const backupsAPI = {
 
 export const filesAPI = {
   list: (folder = "/") => api.get("/files", { params: { folder } }),
+  folders: (folder = "/") => api.get("/files/folders", { params: { folder } }),
   upload: (file, folder = "/") => {
     const fd = new FormData();
     fd.append("file", file);

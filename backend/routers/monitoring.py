@@ -88,23 +88,20 @@ async def manual_poll(device_id: int, db: Session = Depends(get_db), current_use
     if ping_result.get("packet_loss") is not None:
         samples.append(models.MetricSample(device_id=device.id, metric="packet_loss", value=ping_result["packet_loss"], timestamp=now))
 
-    if device.snmp_community:
-        snmp_metrics = await poll_device_metrics(device.ip_address, device.snmp_community, device.snmp_version or "v2c")
-        for metric_name, value in snmp_metrics.items():
-            if metric_name == "simulated":
-                continue
-            samples.append(models.MetricSample(device_id=device.id, metric=metric_name, value=value, timestamp=now))
-
-            # Alert thresholds
-            alert = _check_threshold(metric_name, value)
-            if alert:
-                db_alert = models.Alert(
-                    device_id=device.id,
-                    severity=alert["severity"],
-                    event_type=f"{metric_name}_high",
-                    message=f"{device.hostname}: {metric_name} at {value}{alert['unit']}",
-                )
-                db.add(db_alert)
+    snmp_metrics = await poll_device_metrics(device.ip_address, device.snmp_community or "", device.snmp_version or "v2c")
+    for metric_name, value in snmp_metrics.items():
+        if metric_name == "simulated":
+            continue
+        samples.append(models.MetricSample(device_id=device.id, metric=metric_name, value=value, timestamp=now))
+        alert = _check_threshold(metric_name, value)
+        if alert:
+            db_alert = models.Alert(
+                device_id=device.id,
+                severity=alert["severity"],
+                event_type=f"{metric_name}_high",
+                message=f"{device.hostname}: {metric_name} at {value}{alert['unit']}",
+            )
+            db.add(db_alert)
 
     for s in samples:
         db.add(s)

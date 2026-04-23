@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
             ("backup_schedule", "02:00", "Daily backup time (HH:MM)"),
             ("poll_interval", "30", "SNMP/ICMP poll interval in seconds"),
             ("alert_email", "", "Alert notification email"),
-            ("max_backup_count", "30", "Max backups kept per device"),
+            ("max_backup_count", "3", "Max backups kept per device"),
         ]
         for key, value, desc in defaults:
             db.add(models.Setting(key=key, value=value, description=desc))

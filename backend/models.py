@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Float, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -86,22 +86,30 @@ class ConfigBackup(Base):
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(Integer, primary_key=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
-    severity = Column(String)   # info/warning/critical
-    event_type = Column(String)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True, index=True)
+    severity = Column(String)
+    event_type = Column(String, index=True)
     message = Column(Text)
-    resolved = Column(Boolean, default=False)
+    resolved = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     device = relationship("Device", back_populates="alerts")
+
+    __table_args__ = (
+        Index("ix_alert_device_resolved", "device_id", "resolved"),
+    )
 
 
 class MetricSample(Base):
     __tablename__ = "metric_samples"
     id = Column(Integer, primary_key=True)
-    device_id = Column(Integer, ForeignKey("devices.id"))
-    metric = Column(String)  # cpu/memory/rx_bps/tx_bps/rtt_ms/packet_loss
+    device_id = Column(Integer, ForeignKey("devices.id"), index=True)
+    metric = Column(String, index=True)
     value = Column(Float)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_metricsample_device_metric_ts", "device_id", "metric", "timestamp"),
+    )
 
 
 class InventoryItem(Base):
@@ -186,11 +194,11 @@ class DeviceLink(Base):
 class LogEntry(Base):
     __tablename__ = "log_entries"
     id = Column(Integer, primary_key=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
-    level = Column(String, default="info")   # info/warning/error/critical
-    source = Column(String, default="system")  # syslog/ssh/system/snmp
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True, index=True)
+    level = Column(String, default="info", index=True)
+    source = Column(String, default="system")
     message = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class KeyPassEntry(Base):
