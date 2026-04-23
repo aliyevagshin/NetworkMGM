@@ -74,6 +74,17 @@ export default function Files() {
     load();
   };
 
+  const delFolder = async (path) => {
+    if (!confirm(`Delete folder "${path}" and all its contents?`)) return;
+    try {
+      await filesAPI.deleteFolder(path);
+      toast.success("Folder deleted");
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Delete failed");
+    }
+  };
+
   const mkDir = async () => {
     if (!newFolder.trim()) return;
     const path = (folder === "/" ? "" : folder) + "/" + newFolder.trim();
@@ -120,17 +131,24 @@ export default function Files() {
           </thead>
           <tbody className="divide-y divide-border">
             {subfolders.map((sf) => (
-              <tr key={sf.path} className="hover:bg-white/2 transition-colors cursor-pointer" onClick={() => navigate(sf.path)}>
-                <td className="px-4 py-2.5 text-accent flex items-center gap-2">
+              <tr key={sf.path} className="hover:bg-white/2 transition-colors">
+                <td className="px-4 py-2.5 text-accent flex items-center gap-2 cursor-pointer" onClick={() => navigate(sf.path)}>
                   <Folder size={14} className="shrink-0" />
                   <span className="font-mono">{sf.name}</span>
                 </td>
-                <td className="px-4 py-2.5 text-muted text-xs">folder</td>
+                <td className="px-4 py-2.5 text-muted text-xs cursor-pointer" onClick={() => navigate(sf.path)}>folder</td>
                 <td className="px-4 py-2.5 text-muted text-xs">—</td>
                 <td className="px-4 py-2.5 text-muted text-xs">—</td>
                 <td className="px-4 py-2.5 text-muted text-xs">—</td>
                 <td className="px-4 py-2.5">
-                  <ChevronRight size={14} className="text-muted" />
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => navigate(sf.path)} className="p-1.5 text-muted hover:text-accent rounded transition-colors" title="Open">
+                      <ChevronRight size={13} />
+                    </button>
+                    <button onClick={() => delFolder(sf.path)} className="p-1.5 text-muted hover:text-red-400 rounded transition-colors" title="Delete folder">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

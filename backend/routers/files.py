@@ -1,4 +1,5 @@
 import os
+import shutil
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import FileResponse
@@ -101,3 +102,31 @@ def create_folder(folder: str = Query(...), db: Session = Depends(get_db), curre
     folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
     os.makedirs(folder_path, exist_ok=True)
     return {"folder": folder, "created": True}
+
+
+@router.delete("/folder")
+def delete_folder(folder: str = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Delete a folder and all its contents (files in DB + filesystem)."""
+    if folder in ("/", ""):
+        raise HTTPException(status_code=400, detail="Cannot delete root folder")
+
+    folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
+
+    # Prevent path traversal
+    real_path = os.path.realpath(folder_path)
+    real_base = os.path.realpath(FILES_DIR)
+    if not real_path.startswith(real_base + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid folder path")
+
+    # Delete all DB entries whose folder starts with this path
+    all_entries = db.query(models.FileEntry).all()
+    for entry in all_entries:
+        if entry.folder == folder or entry.folder.startswith(folder.rstrip("/") + "/"):
+            db.delete(entry)
+
+    # Delete directory from filesystem
+    if os.path.exists(folder_path):
+        shutil.rmtree(folder_path, ignore_errors=True)
+
+    db.commit()
+    return {"ok": True, "folder": folder}

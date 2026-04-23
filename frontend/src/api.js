@@ -101,6 +101,7 @@ export const filesAPI = {
   download: (id) => `${api.defaults.baseURL}/files/${id}/download`,
   delete: (id) => api.delete(`/files/${id}`),
   createFolder: (folder) => api.post(`/files/folder?folder=${encodeURIComponent(folder)}`),
+  deleteFolder: (folder) => api.delete(`/files/folder?folder=${encodeURIComponent(folder)}`),
 };
 
 export const settingsAPI = {

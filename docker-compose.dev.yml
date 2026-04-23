@@ -1,0 +1,33 @@
+# Dev override — hot-reload for backend (uvicorn --reload) and frontend (Vite HMR)
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# What changes vs production:
+#   backend  — source code mounted as volume, uvicorn runs with --reload
+#   frontend — runs Vite dev server (HMR) instead of pre-built nginx static files
+#   No rebuild needed after code changes; browser auto-refreshes on frontend edits.
+
+services:
+  backend:
+    volumes:
+      - ./backend:/app          # mount source — uvicorn reload picks up changes
+      - ./data/backups:/app/backups
+      - ./data/files:/app/files
+      - ./data/ssh_keys:/app/ssh_keys
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app
+      --loop asyncio
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules        # anonymous volume — keep container node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
