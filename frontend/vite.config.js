@@ -11,4 +11,20 @@ export default defineConfig({
       interval: 300,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react":   ["react", "react-dom", "react-router-dom"],
+          "vendor-flow":    ["reactflow"],
+          "vendor-charts":  ["recharts"],
+          "vendor-term":    ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links"],
+          "vendor-ui":      ["lucide-react", "react-hot-toast", "date-fns"],
+          "vendor-query":   ["@tanstack/react-query", "@tanstack/react-virtual"],
+          "vendor-pdf":     ["html2canvas", "jspdf"],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
+  },
 });

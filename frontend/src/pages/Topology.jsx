@@ -246,18 +246,6 @@ function DiagramNode({ id, data, selected }) {
   const scale   = data.scale || 1;
   const iconSz  = Math.round(32 * scale);
 
-  // Count used ports from live edge state (no prop drilling needed)
-  const allEdges = useEdges();
-  const usedPorts = useMemo(() => {
-    const used = new Set();
-    allEdges.forEach((e) => {
-      if (e.source === id && e.data?.src_port) used.add(e.data.src_port);
-      if (e.target === id && e.data?.dst_port) used.add(e.data.dst_port);
-    });
-    return used;
-  }, [allEdges, id]);
-  const available = ports.length - usedPorts.size;
-
   // Split ports: >8 → top half on top edge, bottom half on bottom edge
   const topPorts = ports.length > 8 ? ports.slice(0, Math.ceil(ports.length / 2)) : [];
   const btmPorts = ports.length > 8 ? ports.slice(Math.ceil(ports.length / 2))    : ports;
@@ -290,47 +278,66 @@ function DiagramNode({ id, data, selected }) {
         <Handle key={p} type="source" position={Position.Bottom} id={p} style={hStyle(i, btmPorts.length, "bottom")} title={p}/>
       ))}
       {["Top","Right","Bottom","Left"].map((s) => (
-        <Handle key={s+"-t"} type="target" position={Position[s]} id={s.toLowerCase()+"-t"} style={{ opacity: 0, width: 8, height: 8 }}/>
+        <Handle key={s+"-t"} type="target" position={Position[s]} id={s.toLowerCase()+"-t"}
+          style={{ opacity: 0, width: 18, height: 18, background: "transparent", border: "none" }}/>
       ))}
 
       <div className="flex flex-col items-center gap-1" style={{ transform: `scale(${scale})`, transformOrigin: "center top" }}>
         <Icon color={color} size={iconSz}/>
         <div className="text-[11px] font-mono text-white font-semibold text-center leading-tight" style={{ maxWidth: iconSz * 3.5 }}>{data.label || DEVICE_LABELS[data.device_type] || data.device_type}</div>
         {data.ip && <div className="text-[10px] font-mono text-muted">{data.ip}</div>}
-        <div className="text-[9px]" style={{ color: available === 0 ? "#ef4444" : available <= 2 ? "#f59e0b" : "#6b7280" }}>
-          {available}/{ports.length} free
-        </div>
-      </div>
-
-      {/* Port dot indicators */}
-      {topPorts.length > 0 && (
-        <div className="flex justify-center gap-[3px] mt-1 pt-1 border-t border-white/5">
-          {topPorts.map((p) => <div key={p} title={p} className="w-[5px] h-[5px] rounded-full" style={{ background: color + "70" }}/>)}
-        </div>
-      )}
-      <div className="flex justify-center gap-[3px] mt-1 pb-0.5">
-        {btmPorts.map((p) => <div key={p} title={p} className="w-[5px] h-[5px] rounded-full" style={{ background: color + "70" }}/>)}
       </div>
     </div>
   );
 }
 
 /* ─── Custom cable edge — port labels at each end, middle label ─── */
-function CableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, style, selected }) {
-  const [path, midX, midY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+function CableEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, style, selected }) {
+  const allEdges = useEdges();
+
+  // Perpendicular offset so parallel edges (same node pair) spread apart cleanly
+  const perpOffset = useMemo(() => {
+    const siblings = allEdges
+      .filter((e) => (e.source === source && e.target === target) || (e.source === target && e.target === source))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (siblings.length <= 1) return 0;
+    const idx = siblings.findIndex((e) => e.id === id);
+    return (idx - (siblings.length - 1) / 2) * 22;   // 22px spacing between parallel edges
+  }, [allEdges, id, source, target]);
+
+  // Apply offset perpendicular to the straight line between nodes
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const nx = (-dy / dist) * perpOffset;
+  const ny = (dx / dist) * perpOffset;
+
+  const sx = sourceX + nx, sy = sourceY + ny;
+  const tx = targetX + nx, ty = targetY + ny;
+
+  const [path, midX, midY] = getBezierPath({ sourceX: sx, sourceY: sy, sourcePosition, targetX: tx, targetY: ty, targetPosition, curvature: 0.25 });
   const ct = CABLE_TYPES[data?.cable_type] || CABLE_TYPES.ethernet;
 
-  // Port label positions: 14% from source end, 86% from source (=14% from target)
-  const t1 = 0.14, t2 = 0.86;
-  const srcLx = sourceX + (targetX - sourceX) * t1;
-  const srcLy = sourceY + (targetY - sourceY) * t1;
-  const dstLx = sourceX + (targetX - sourceX) * t2;
-  const dstLy = sourceY + (targetY - sourceY) * t2;
+  // Port labels follow the cable's actual exit/entry direction so they always
+  // appear clearly outside the node, never hidden behind it.
+  const POS_DIR = { bottom: [0,1], top: [0,-1], right: [1,0], left: [-1,0] };
+  const [sEx, sEy] = POS_DIR[sourcePosition] || [0, 1];
+  const [tEx, tEy] = POS_DIR[targetPosition] || [0, -1];
+  const LOFF = 34;   // px from handle along exit/entry direction
+  const POFF = 8;    // px perpendicular offset so label sits beside cable
 
-  const portLabelStyle = (x, y) => ({
+  // Source label: follow exit direction, shift perpendicular to cable
+  const srcLx = sx + sEx * LOFF + (-sEy) * POFF;
+  const srcLy = sy + sEy * LOFF + sEx * POFF;
+  // Target label: follow entry direction (same formula, opposite side of node)
+  const dstLx = tx + tEx * LOFF + (-tEy) * POFF;
+  const dstLy = ty + tEy * LOFF + tEx * POFF;
+
+  const lStyle = (x, y, color) => ({
     position: "absolute",
     transform: `translate(-50%,-50%) translate(${x}px,${y}px)`,
     pointerEvents: "all",
+    color,
   });
 
   return (
@@ -338,31 +345,24 @@ function CableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
       <path id={id}
         style={{ ...style, strokeWidth: selected ? 3 : 2, stroke: ct.color, strokeDasharray: ct.dash || undefined, cursor: "pointer" }}
         className="react-flow__edge-path" d={path} markerEnd={markerEnd}/>
-      {/* Wide invisible hit-area so edge is easy to click */}
-      <path style={{ stroke: "transparent", strokeWidth: 12, fill: "none", cursor: "pointer" }} d={path}/>
+      <path style={{ stroke: "transparent", strokeWidth: 14, fill: "none", cursor: "pointer" }} d={path}/>
 
       <EdgeLabelRenderer>
-        {/* Source port label */}
         {data?.src_port && (
-          <div style={portLabelStyle(srcLx, srcLy)}
-            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1 py-0.5 whitespace-nowrap select-none"
-            style={{ color: ct.color }}>
+          <div style={lStyle(srcLx, srcLy, ct.color)}
+            className="text-[9px] font-mono bg-[#0e1018] border border-white/15 rounded px-1 py-0.5 whitespace-nowrap select-none leading-tight">
             {data.src_port}
           </div>
         )}
-        {/* Middle label (subnet / description) */}
         {data?.label && (
-          <div style={portLabelStyle(midX, midY)}
-            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1 py-0.5 whitespace-nowrap select-none"
-            style={{ color: ct.color + "cc" }}>
+          <div style={lStyle(midX, midY, ct.color + "cc")}
+            className="text-[9px] font-mono bg-[#0e1018] border border-white/15 rounded px-1 py-0.5 whitespace-nowrap select-none leading-tight">
             {data.label}
           </div>
         )}
-        {/* Target port label */}
         {data?.dst_port && (
-          <div style={portLabelStyle(dstLx, dstLy)}
-            className="text-[9px] font-mono bg-[#13151f] border border-white/10 rounded px-1 py-0.5 whitespace-nowrap select-none"
-            style={{ color: ct.color }}>
+          <div style={lStyle(dstLx, dstLy, ct.color)}
+            className="text-[9px] font-mono bg-[#0e1018] border border-white/15 rounded px-1 py-0.5 whitespace-nowrap select-none leading-tight">
             {data.dst_port}
           </div>
         )}
@@ -371,7 +371,46 @@ function CableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
   );
 }
 
-const nodeTypes = { diagram: DiagramNode };
+/* ─── Text node ─── */
+function TextNode({ id, data, selected }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(data.text || "Text");
+  const inputRef = useRef(null);
+
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+
+  const commit = () => { setEditing(false); data.onUpdate?.(id, { text: draft }); };
+
+  return (
+    <div
+      onClick={() => data.onSelect?.(id)}
+      onDoubleClick={(e) => { e.stopPropagation(); setDraft(data.text || "Text"); setEditing(true); }}
+      style={{
+        outline: selected ? "1.5px dashed #4f7cff" : "1.5px dashed transparent",
+        borderRadius: 4,
+        padding: "3px 6px",
+        cursor: "default",
+        minWidth: 40,
+      }}
+    >
+      {editing ? (
+        <input ref={inputRef} value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); } }}
+          style={{ background: "transparent", border: "none", outline: "none", color: data.color || "#ffffff", fontSize: data.fontSize || 14, fontFamily: "monospace", width: Math.max(60, draft.length * ((data.fontSize||14)*0.6)) }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span style={{ color: data.color || "#ffffff", fontSize: data.fontSize || 14, fontFamily: "monospace", whiteSpace: "pre" }}>
+          {data.text || "Text"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const nodeTypes = { diagram: DiagramNode, text: TextNode };
 const edgeTypes = { cable: CableEdge };
 
 /* ─── Canvas ─── */
@@ -387,12 +426,13 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
   const flowRef  = useRef(null);
   const timerRef = useRef(null);
 
-  const currentIdRef  = useRef(topoId);
-  const nodesRef      = useRef([]);
-  const edgesRef      = useRef([]);
-  const nameRef       = useRef(topoName);
-  const cableTypeRef  = useRef(activeCableType);
-  const onSavedRef    = useRef(onSaved);
+  const currentIdRef       = useRef(topoId);
+  const nodesRef           = useRef([]);
+  const edgesRef           = useRef([]);
+  const nameRef            = useRef(topoName);
+  const cableTypeRef       = useRef(activeCableType);
+  const onSavedRef         = useRef(onSaved);
+  const updateTextNodeRef  = useRef(null);
   useEffect(() => { currentIdRef.current = topoId;          }, [topoId]);
   useEffect(() => { nodesRef.current     = nodes;           }, [nodes]);
   useEffect(() => { edgesRef.current     = edges;           }, [edges]);
@@ -407,7 +447,10 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
     topologiesAPI.get(topoId).then((r) => {
       try {
         const { nodes: ns = [], edges: es = [] } = JSON.parse(r.data.data || "{}");
-        setNodes(ns.map((n) => ({ ...n, data: { ...n.data, onSelect: setSelectedId } })));
+        setNodes(ns.map((n) => {
+          if (n.type === "text") return { ...n, data: { ...n.data, onSelect: setSelectedId, onUpdate: (...a) => updateTextNodeRef.current?.(...a) } };
+          return { ...n, data: { ...n.data, onSelect: setSelectedId } };
+        }));
         setEdges(es);
       } catch { setNodes([]); setEdges([]); }
       setSaveState("saved");
@@ -423,7 +466,7 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
     timerRef.current = setTimeout(async () => {
       setSaveState("saving");
       const data = JSON.stringify({
-        nodes: nodesRef.current.map(({ data: { onSelect, ...rest }, ...n }) => ({ ...n, data: rest })),
+        nodes: nodesRef.current.map(({ data: { onSelect, onUpdate, ...rest }, ...n }) => ({ ...n, data: rest })),
         edges: edgesRef.current,
       });
       try {
@@ -448,12 +491,21 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
     const deviceType = e.dataTransfer.getData("application/nms-device-type");
     if (!deviceType) return;
     const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    setNodes((ns) => ns.concat({
-      id: `n_${Date.now()}`,
-      type: "diagram",
-      position: pos,
-      data: { device_type: deviceType, label: DEVICE_LABELS[deviceType]||deviceType, ip: "", notes: "", ports: [...(DEFAULT_PORTS[deviceType]||[])], scale: 1, onSelect: setSelectedId },
-    }));
+    if (deviceType === "__text__") {
+      setNodes((ns) => ns.concat({
+        id: `t_${Date.now()}`,
+        type: "text",
+        position: pos,
+        data: { text: "Text", fontSize: 14, color: "#ffffff", onSelect: setSelectedId, onUpdate: (...a) => updateTextNodeRef.current?.(...a) },
+      }));
+    } else {
+      setNodes((ns) => ns.concat({
+        id: `n_${Date.now()}`,
+        type: "diagram",
+        position: pos,
+        data: { device_type: deviceType, label: DEVICE_LABELS[deviceType]||deviceType, ip: "", notes: "", ports: [...(DEFAULT_PORTS[deviceType]||[])], scale: 1, onSelect: setSelectedId },
+      }));
+    }
     triggerSave();
   }, [screenToFlowPosition, triggerSave]);
 
@@ -477,10 +529,15 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
 
   const confirmConn = useCallback((srcPort, dstPort) => {
     if (!pendingConn) return;
+    // Keep original drag handles so ReactFlow knows exit/entry direction
+    const srcHandle = pendingConn.params.sourceHandle || null;
+    const tgtHandle = pendingConn.params.targetHandle || null;
     setEdges((es) => es.concat({
       id: `e_${Date.now()}`,
       source: pendingConn.params.source,
       target: pendingConn.params.target,
+      sourceHandle: srcHandle,
+      targetHandle: tgtHandle,
       type: "cable",
       data: { cable_type: cableTypeRef.current, src_port: srcPort || null, dst_port: dstPort || null, label: "" },
     }));
@@ -520,6 +577,12 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
     triggerSave();
   }, [triggerSave]);
 
+  const updateTextNode = useCallback((id, patch) => {
+    setNodes((ns) => ns.map((n) => n.id === id ? { ...n, data: { ...n.data, ...patch } } : n));
+    triggerSave();
+  }, [triggerSave]);
+  useEffect(() => { updateTextNodeRef.current = updateTextNode; }, [updateTextNode]);
+
   const deleteNode = useCallback((id) => {
     setNodes((ns) => ns.filter((n) => n.id !== id));
     setEdges((es) => es.filter((e) => e.source !== id && e.target !== id));
@@ -558,7 +621,9 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
     onDeleted();
   };
 
-  const selectedNode = nodes.find((n) => n.id === selectedId);
+  const selectedNode     = nodes.find((n) => n.id === selectedId);
+  const selectedTextNode = selectedNode?.type === "text" ? selectedNode : null;
+  const selectedDiagNode = selectedNode?.type !== "text" ? selectedNode : null;
   const saveLabel = { saved: <span className="text-[10px] text-green-400">✓ saved</span>, saving: <span className="text-[10px] text-amber-400 animate-pulse">saving…</span>, unsaved: <span className="text-[10px] text-amber-400">● unsaved</span> }[saveState];
 
   return (
@@ -602,8 +667,50 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
           </ReactFlow>
         </div>
 
-        {/* Node properties panel */}
-        {selectedNode && (
+        {/* Text node properties panel */}
+        {selectedTextNode && (
+          <div className="w-56 bg-surface border border-border rounded-xl p-3 flex flex-col gap-2.5 shrink-0">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white">Text</span>
+              <button onClick={() => setSelectedId(null)} className="text-muted hover:text-white"><X size={13}/></button>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted mb-1 block">Content (double-click to edit)</label>
+              <input value={selectedTextNode.data.text||""} onChange={(e) => updateTextNode(selectedTextNode.id, { text: e.target.value })}
+                className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent"/>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted mb-1 block">Font Size</label>
+              <div className="flex items-center gap-2">
+                <button onClick={() => updateTextNode(selectedTextNode.id, { fontSize: Math.max(8, (selectedTextNode.data.fontSize||14) - 2) })}
+                  className="p-1 bg-white/5 hover:bg-white/10 rounded border border-border text-muted hover:text-white transition-colors">
+                  <ZoomOut size={12}/>
+                </button>
+                <span className="text-xs text-white font-mono flex-1 text-center">{selectedTextNode.data.fontSize||14}px</span>
+                <button onClick={() => updateTextNode(selectedTextNode.id, { fontSize: Math.min(72, (selectedTextNode.data.fontSize||14) + 2) })}
+                  className="p-1 bg-white/5 hover:bg-white/10 rounded border border-border text-muted hover:text-white transition-colors">
+                  <ZoomIn size={12}/>
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted mb-1 block">Color</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={selectedTextNode.data.color||"#ffffff"}
+                  onChange={(e) => updateTextNode(selectedTextNode.id, { color: e.target.value })}
+                  className="w-8 h-7 rounded border border-border bg-bg cursor-pointer p-0.5"/>
+                <span className="text-[10px] font-mono text-muted">{selectedTextNode.data.color||"#ffffff"}</span>
+              </div>
+            </div>
+            <button onClick={() => deleteNode(selectedTextNode.id)}
+              className="mt-auto flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs rounded-lg transition-colors">
+              <Trash2 size={11}/> Delete
+            </button>
+          </div>
+        )}
+
+        {/* Diagram node properties panel */}
+        {selectedDiagNode && (
           <div className="w-56 bg-surface border border-border rounded-xl p-3 flex flex-col gap-2.5 shrink-0 overflow-y-auto">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-white">Properties</span>
@@ -611,51 +718,49 @@ function TopologyCanvas({ topoId, topoName, onSaved, onDeleted, onNameChange, ac
             </div>
             <div>
               <label className="text-[10px] text-muted mb-1 block">Type</label>
-              <select value={selectedNode.data.device_type}
-                onChange={(e) => updateNode(selectedNode.id, { device_type: e.target.value, ports: [...(DEFAULT_PORTS[e.target.value]||[])] })}
+              <select value={selectedDiagNode.data.device_type}
+                onChange={(e) => updateNode(selectedDiagNode.id, { device_type: e.target.value, ports: [...(DEFAULT_PORTS[e.target.value]||[])] })}
                 className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent">
                 {DEVICE_TYPES.map((t) => <option key={t} value={t}>{DEVICE_LABELS[t]}</option>)}
               </select>
             </div>
             <div>
               <label className="text-[10px] text-muted mb-1 block">Label</label>
-              <input value={selectedNode.data.label||""} onChange={(e) => updateNode(selectedNode.id, { label: e.target.value })}
+              <input value={selectedDiagNode.data.label||""} onChange={(e) => updateNode(selectedDiagNode.id, { label: e.target.value })}
                 className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" placeholder="Device name…"/>
             </div>
             <div>
               <label className="text-[10px] text-muted mb-1 block">IP Address</label>
-              <input value={selectedNode.data.ip||""} onChange={(e) => updateNode(selectedNode.id, { ip: e.target.value })}
+              <input value={selectedDiagNode.data.ip||""} onChange={(e) => updateNode(selectedDiagNode.id, { ip: e.target.value })}
                 className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" placeholder="192.168.1.1"/>
             </div>
-            {/* Icon size */}
             <div>
               <label className="text-[10px] text-muted mb-1 block">Icon Size</label>
               <div className="flex items-center gap-2">
-                <button onClick={() => updateNode(selectedNode.id, { scale: Math.max(0.5, (selectedNode.data.scale||1) - 0.1) })}
+                <button onClick={() => updateNode(selectedDiagNode.id, { scale: Math.max(0.5, (selectedDiagNode.data.scale||1) - 0.1) })}
                   className="p-1 bg-white/5 hover:bg-white/10 rounded border border-border text-muted hover:text-white transition-colors">
                   <ZoomOut size={12}/>
                 </button>
-                <span className="text-xs text-white font-mono flex-1 text-center">{Math.round((selectedNode.data.scale||1)*100)}%</span>
-                <button onClick={() => updateNode(selectedNode.id, { scale: Math.min(2.0, (selectedNode.data.scale||1) + 0.1) })}
+                <span className="text-xs text-white font-mono flex-1 text-center">{Math.round((selectedDiagNode.data.scale||1)*100)}%</span>
+                <button onClick={() => updateNode(selectedDiagNode.id, { scale: Math.min(2.0, (selectedDiagNode.data.scale||1) + 0.1) })}
                   className="p-1 bg-white/5 hover:bg-white/10 rounded border border-border text-muted hover:text-white transition-colors">
                   <ZoomIn size={12}/>
                 </button>
               </div>
             </div>
-            {/* Ports */}
             <div>
               <label className="text-[10px] text-muted mb-1 block">Ports (one per line)</label>
-              <textarea value={(selectedNode.data.ports||[]).join("\n")}
-                onChange={(e) => updateNode(selectedNode.id, { ports: e.target.value.split("\n").map((s)=>s.trim()).filter(Boolean) })}
-                rows={Math.min((selectedNode.data.ports||[]).length + 1, 8)}
+              <textarea value={(selectedDiagNode.data.ports||[]).join("\n")}
+                onChange={(e) => updateNode(selectedDiagNode.id, { ports: e.target.value.split("\n").map((s)=>s.trim()).filter(Boolean) })}
+                rows={Math.min((selectedDiagNode.data.ports||[]).length + 1, 8)}
                 className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-[10px] font-mono text-white focus:outline-none focus:border-accent resize-y"/>
             </div>
             <div>
               <label className="text-[10px] text-muted mb-1 block">Notes</label>
-              <textarea value={selectedNode.data.notes||""} onChange={(e) => updateNode(selectedNode.id, { notes: e.target.value })}
+              <textarea value={selectedDiagNode.data.notes||""} onChange={(e) => updateNode(selectedDiagNode.id, { notes: e.target.value })}
                 rows={2} className="w-full bg-bg border border-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent resize-none" placeholder="Optional…"/>
             </div>
-            <button onClick={() => deleteNode(selectedNode.id)}
+            <button onClick={() => deleteNode(selectedDiagNode.id)}
               className="mt-auto flex items-center justify-center gap-1.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs rounded-lg transition-colors">
               <Trash2 size={11}/> Delete Node
             </button>
@@ -794,6 +899,14 @@ export default function Topology() {
                   </div>
                 );
               })}
+              {/* Text element */}
+              <div draggable
+                onDragStart={(e) => { e.dataTransfer.setData("application/nms-device-type", "__text__"); e.dataTransfer.effectAllowed = "move"; }}
+                className="flex flex-col items-center gap-0.5 p-1.5 rounded-lg border border-border cursor-grab hover:border-accent/40 hover:bg-white/5 transition-all select-none active:cursor-grabbing col-span-2"
+                title="Text label">
+                <span className="text-white font-mono font-bold text-sm leading-none py-0.5">T</span>
+                <span className="text-[9px] text-muted">Text Label</span>
+              </div>
             </div>
           </div>
 
