@@ -20,9 +20,12 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+# NOTE: /folders, /folder (POST), /folder (DELETE), /upload must all be declared
+# BEFORE /{file_id} routes. FastAPI matches in registration order; the parameterized
+# /{file_id} route would try to cast "folder" or "folders" as int and return 422.
+
 @router.get("/folders")
 def list_folders(folder: str = Query("/"), current_user=Depends(get_current_user)):
-    """List immediate subdirectories of the given folder."""
     folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
     subfolders = []
     if os.path.exists(folder_path):
@@ -34,6 +37,36 @@ def list_folders(folder: str = Query("/"), current_user=Depends(get_current_user
         except PermissionError:
             pass
     return subfolders
+
+
+@router.post("/folder")
+def create_folder(folder: str = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
+    os.makedirs(folder_path, exist_ok=True)
+    return {"folder": folder, "created": True}
+
+
+@router.delete("/folder")
+def delete_folder(folder: str = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if folder in ("/", ""):
+        raise HTTPException(status_code=400, detail="Cannot delete root folder")
+
+    folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
+    real_path = os.path.realpath(folder_path)
+    real_base = os.path.realpath(FILES_DIR)
+    if not real_path.startswith(real_base + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid folder path")
+
+    all_entries = db.query(models.FileEntry).all()
+    for entry in all_entries:
+        if entry.folder == folder or entry.folder.startswith(folder.rstrip("/") + "/"):
+            db.delete(entry)
+
+    if os.path.exists(folder_path):
+        shutil.rmtree(folder_path, ignore_errors=True)
+
+    db.commit()
+    return {"ok": True, "folder": folder}
 
 
 @router.get("", response_model=List[schemas.FileEntryOut])
@@ -95,38 +128,3 @@ def delete_file(file_id: int, db: Session = Depends(get_db), current_user=Depend
     db.delete(entry)
     db.commit()
     return {"ok": True}
-
-
-@router.post("/folder")
-def create_folder(folder: str = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
-    os.makedirs(folder_path, exist_ok=True)
-    return {"folder": folder, "created": True}
-
-
-@router.delete("/folder")
-def delete_folder(folder: str = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """Delete a folder and all its contents (files in DB + filesystem)."""
-    if folder in ("/", ""):
-        raise HTTPException(status_code=400, detail="Cannot delete root folder")
-
-    folder_path = os.path.join(FILES_DIR, folder.lstrip("/"))
-
-    # Prevent path traversal
-    real_path = os.path.realpath(folder_path)
-    real_base = os.path.realpath(FILES_DIR)
-    if not real_path.startswith(real_base + os.sep):
-        raise HTTPException(status_code=400, detail="Invalid folder path")
-
-    # Delete all DB entries whose folder starts with this path
-    all_entries = db.query(models.FileEntry).all()
-    for entry in all_entries:
-        if entry.folder == folder or entry.folder.startswith(folder.rstrip("/") + "/"):
-            db.delete(entry)
-
-    # Delete directory from filesystem
-    if os.path.exists(folder_path):
-        shutil.rmtree(folder_path, ignore_errors=True)
-
-    db.commit()
-    return {"ok": True, "folder": folder}

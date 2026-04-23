@@ -1,16 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import ReactFlow, {
   Background, Controls, MiniMap,
-  useNodesState, useEdgesState, addEdge,
+  useNodesState, useEdgesState,
   EdgeLabelRenderer, getBezierPath, Handle, Position,
-  Panel,
+  useReactFlow, ReactFlowProvider,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import Layout from "../components/Layout";
 import { devicesAPI, topologyAPI } from "../api";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Save, RotateCcw } from "lucide-react";
+import { Plus, Trash2, RotateCcw, FileDown, RefreshCw } from "lucide-react";
 
 /* ─── SVG Device Icons ─── */
 const RouterSVG = ({ color }) => (
@@ -100,7 +100,6 @@ function DeviceNode({ data, selected }) {
       }}
       className="bg-[#13151f] rounded-xl px-3 py-2.5 min-w-[120px] cursor-pointer select-none transition-all"
     >
-      {/* Handles on all 4 sides */}
       <Handle type="source" position={Position.Top}    id="top"    style={{ background: typeColor, width: 8, height: 8, border: "2px solid #13151f" }} />
       <Handle type="source" position={Position.Right}  id="right"  style={{ background: typeColor, width: 8, height: 8, border: "2px solid #13151f" }} />
       <Handle type="source" position={Position.Bottom} id="bottom" style={{ background: typeColor, width: 8, height: 8, border: "2px solid #13151f" }} />
@@ -161,7 +160,8 @@ function autoLayout(devices) {
   return positions;
 }
 
-export default function Topology() {
+/* ─── Inner component (needs ReactFlowProvider context for useReactFlow) ─── */
+function TopologyInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selected, setSelected] = useState(null);
@@ -169,8 +169,11 @@ export default function Topology() {
   const [links, setLinks] = useState([]);
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [linkForm, setLinkForm] = useState({ source_device_id: "", target_device_id: "", source_port: "", target_port: "", link_type: "ethernet" });
+  const [exporting, setExporting] = useState(false);
   const navigate = useNavigate();
   const posRef = useRef(loadPositions());
+  const flowRef = useRef(null);
+  const { fitView } = useReactFlow();
 
   const buildNodes = useCallback((devList, positions) => {
     return devList.map((d) => ({
@@ -200,7 +203,6 @@ export default function Topology() {
     setDevices(devList);
     setLinks(linkList);
     const saved = posRef.current;
-    // auto-layout devices that don't have saved positions yet
     const missing = devList.filter((d) => !saved[d.id]);
     if (missing.length) {
       const auto = autoLayout(missing);
@@ -267,6 +269,58 @@ export default function Topology() {
     toast.success("Layout reset");
   };
 
+  const exportPDF = async () => {
+    if (!flowRef.current) return;
+    setExporting(true);
+    toast.loading("Generating PDF…", { id: "pdf" });
+    try {
+      // Dynamic import to keep bundle lighter
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+
+      // Fit view before capture so all nodes are visible
+      fitView({ padding: 0.1, duration: 0 });
+      await new Promise((r) => setTimeout(r, 200)); // wait for render
+
+      const canvas = await html2canvas(flowRef.current, {
+        backgroundColor: "#0e1018",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      // Landscape A4 in px at 96dpi: 297mm × 210mm
+      const pdf = new jsPDF({ orientation: imgW > imgH ? "landscape" : "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const ratio = Math.min(pageW / imgW, pageH / imgH);
+      const drawW = imgW * ratio;
+      const drawH = imgH * ratio;
+      const offsetX = (pageW - drawW) / 2;
+      const offsetY = (pageH - drawH) / 2;
+
+      pdf.addImage(canvas.toDataURL("image/png"), "PNG", offsetX, offsetY, drawW, drawH);
+
+      // Title + metadata footer
+      pdf.setFontSize(8);
+      pdf.setTextColor(120, 120, 140);
+      pdf.text(`Network Topology — ${devices.length} devices, ${links.length} links`, 6, pageH - 4);
+      pdf.text(new Date().toLocaleString(), pageW - 6, pageH - 4, { align: "right" });
+
+      pdf.save(`topology_${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success("PDF exported", { id: "pdf" });
+    } catch (err) {
+      console.error(err);
+      toast.error("Export failed", { id: "pdf" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <Layout title="Topology">
       {/* Toolbar */}
@@ -275,9 +329,18 @@ export default function Topology() {
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent/10 hover:bg-accent/20 text-accent rounded-lg transition-colors">
           <Plus size={12} /> Add Link
         </button>
+        <button onClick={load}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted border border-border hover:text-white rounded-lg transition-colors">
+          <RefreshCw size={12} /> Refresh
+        </button>
         <button onClick={resetLayout}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted border border-border hover:text-white rounded-lg transition-colors">
           <RotateCcw size={12} /> Reset Layout
+        </button>
+        <button onClick={exportPDF} disabled={exporting}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors disabled:opacity-50">
+          <FileDown size={12} className={exporting ? "animate-pulse" : ""} />
+          {exporting ? "Exporting…" : "Export PDF"}
         </button>
         <span className="text-xs text-muted self-center ml-1">
           {devices.length} devices · {links.length} links · drag handles to connect
@@ -317,7 +380,7 @@ export default function Topology() {
         </form>
       )}
 
-      {/* Legend */}
+      {/* Device type legend */}
       <div className="flex gap-3 mb-3 flex-wrap">
         {Object.entries(DEVICE_COLORS).map(([type, color]) => {
           const Icon = DEVICE_ICONS[type];
@@ -330,7 +393,7 @@ export default function Topology() {
         })}
       </div>
 
-      <div className="relative h-[calc(100vh-16rem)] bg-[#0e1018] border border-border rounded-xl overflow-hidden">
+      <div ref={flowRef} className="relative h-[calc(100vh-16rem)] bg-[#0e1018] border border-border rounded-xl overflow-hidden">
         <ReactFlow
           nodes={nodes} edges={edges}
           onNodesChange={onNodesChange}
@@ -400,5 +463,13 @@ export default function Topology() {
         )}
       </div>
     </Layout>
+  );
+}
+
+export default function Topology() {
+  return (
+    <ReactFlowProvider>
+      <TopologyInner />
+    </ReactFlowProvider>
   );
 }
