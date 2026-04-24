@@ -36,13 +36,25 @@ async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
 
     if "postgresql" in DATABASE_URL:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
-            conn.execute(text(
-                "SELECT create_hypertable('metric_samples', 'timestamp', "
-                "if_not_exists => TRUE, migrate_data => TRUE);"
-            ))
-            conn.commit()
+        # CREATE EXTENSION timescaledb drops the current connection on first load
+        # (PostgreSQL restarts the backend session when loading a new shared library).
+        # Use separate connections and swallow the expected OperationalError.
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
+                conn.commit()
+        except Exception:
+            pass  # connection drop on first timescaledb load is expected
+
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "SELECT create_hypertable('metric_samples', 'timestamp', "
+                    "if_not_exists => TRUE, migrate_data => TRUE);"
+                ))
+                conn.commit()
+        except Exception:
+            pass  # hypertable may already exist
 
     db = SessionLocal()
     admin_username = os.environ.get("FIRST_ADMIN_USERNAME", "admin")
