@@ -4,15 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NMS — Network Management System</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
   </head>
   <body class="bg-bg text-white font-sans">
-    <div id="root"></div>
+    <div id="root">
+      <div id="preload-msg" style="color:#e8eaf0;padding:40px;font-family:sans-serif;font-size:16px">
+        Loading NMS...
+      </div>
+    </div>
+    <script>
+      // Remove loading message once JS module starts running
+      document.addEventListener("DOMContentLoaded", function() {
+        setTimeout(function() {
+          var el = document.getElementById("preload-msg");
+          if (el && el.parentNode.childNodes.length === 1) {
+            el.style.color = "#ef4444";
+            el.textContent = "React failed to mount. Check browser console (F12).";
+          }
+        }, 5000);
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

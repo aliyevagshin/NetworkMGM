@@ -24,6 +24,7 @@ celery_app.conf.update(
     task_acks_late=True,                  # re-queue on worker crash
     worker_prefetch_multiplier=1,         # one task at a time per worker thread
     result_expires=3600,                  # task results kept 1h in Redis
+    task_default_queue="default",         # match docker-compose worker -Q default
 )
 
 logger = get_task_logger(__name__)
@@ -181,6 +182,110 @@ def task_scan_subnet(self, subnet_id: int, username: str = "system"):
         db.close()
 
 
+# ── Bulk config push ─────────────────────────────────────────────────────────
+
+@celery_app.task(bind=True, name="tasks.bulk_config_device", time_limit=120)
+def task_bulk_config_device(self, result_id: int):
+    from database import SessionLocal
+    from services.crypto_service import CryptoService
+    from datetime import datetime
+    import models
+
+    db = SessionLocal()
+    result = None
+    try:
+        result = db.query(models.BulkConfigResult).filter_by(id=result_id).first()
+        if not result:
+            return {"error": "Result not found"}
+
+        result.status = "running"
+        result.started_at = datetime.utcnow()
+        db.commit()
+
+        device = result.device
+        job = result.job
+        commands = [c.strip() for c in job.commands.splitlines() if c.strip()]
+
+        cred = _get_credential(db, device, CryptoService())
+        if not cred:
+            result.status = "error"
+            result.error = "No credentials configured for this device"
+            result.finished_at = datetime.utcnow()
+            db.commit()
+            _update_bulk_job_status(db, result.job_id)
+            return {"error": "No credentials"}
+
+        from netmiko import ConnectHandler, NetmikoTimeoutException, NetmikoAuthenticationException
+        netmiko_type = _vendor_to_netmiko(device.vendor or "", device.os_version or "")
+        enable_pass = cred.get("enable_password") or ""
+
+        conn = ConnectHandler(
+            device_type=netmiko_type,
+            host=device.ip_address,
+            port=device.ssh_port or 22,
+            username=cred["username"],
+            password=cred["password"],
+            secret=enable_pass,
+            timeout=30,
+            session_timeout=60,
+            fast_cli=False,
+        )
+        if enable_pass:
+            conn.enable()
+
+        outputs = []
+        _CONFIG_ENTER = {"conf t", "configure terminal", "configure"}
+        _CONFIG_EXIT  = {"end", "exit", "commit"}
+
+        # Split command list into show-blocks and config-blocks
+        i = 0
+        while i < len(commands):
+            cmd = commands[i]
+            if cmd.lower() in _CONFIG_ENTER:
+                # Collect all lines until end/exit or end of list
+                cfg_cmds = []
+                i += 1
+                while i < len(commands) and commands[i].lower() not in _CONFIG_EXIT:
+                    cfg_cmds.append(commands[i])
+                    i += 1
+                if i < len(commands) and commands[i].lower() in _CONFIG_EXIT:
+                    i += 1  # skip the end/exit line
+                if cfg_cmds:
+                    try:
+                        out = conn.send_config_set(cfg_cmds, read_timeout=30)
+                        block = "\n".join(f"(config)# {c}" for c in cfg_cmds)
+                        outputs.append(f"{block}\n{out}")
+                    except Exception as cfg_err:
+                        outputs.append(f"[CONFIG ERROR: {cfg_err}]")
+            else:
+                try:
+                    out = conn.send_command(cmd, read_timeout=30)
+                    outputs.append(f"$ {cmd}\n{out}")
+                except Exception as cmd_err:
+                    outputs.append(f"$ {cmd}\n[ERROR: {cmd_err}]")
+                i += 1
+
+        conn.disconnect()
+
+        result.status = "success"
+        result.output = "\n\n".join(outputs)
+        result.finished_at = datetime.utcnow()
+        db.commit()
+        _update_bulk_job_status(db, result.job_id)
+        return {"success": True}
+
+    except Exception as exc:
+        if result:
+            result.status = "error"
+            result.error = str(exc)
+            result.finished_at = datetime.utcnow()
+            db.commit()
+            _update_bulk_job_status(db, result.job_id)
+        return {"error": str(exc)}
+    finally:
+        db.close()
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_credential(db, device, crypto):
@@ -189,9 +294,56 @@ def _get_credential(db, device, crypto):
             id=device.vault_credential_id
         ).first()
         if vault:
-            return {"username": vault.username,
-                    "password": crypto.decrypt(vault.encrypted_password)}
+            enable = None
+            if vault.encrypted_enable_pass:
+                try:
+                    enable = crypto.decrypt(vault.encrypted_enable_pass)
+                except Exception:
+                    pass
+            return {
+                "username": vault.username,
+                "password": crypto.decrypt(vault.encrypted_password),
+                "enable_password": enable,
+            }
     return None
+
+
+def _vendor_to_netmiko(vendor: str, os_version: str = "") -> str:
+    v = vendor.lower()
+    o = os_version.lower()
+    if "asa" in v:
+        return "cisco_asa"
+    if "cisco" in v:
+        if "nxos" in o or "nexus" in o:
+            return "cisco_nxos"
+        if "iosxr" in o or " xr" in o:
+            return "cisco_xr"
+        if "iosxe" in o or "ios xe" in o:
+            return "cisco_xe"
+        return "cisco_ios"
+    if "juniper" in v or "junos" in v:
+        return "juniper_junos"
+    if "arista" in v:
+        return "arista_eos"
+    if "fortinet" in v or "fortigate" in v:
+        return "fortinet"
+    if "palo" in v:
+        return "paloalto_panos"
+    if "checkpoint" in v:
+        return "checkpoint_gaia"
+    if "hp" in v or "hewlett" in v:
+        return "hp_procurve" if ("procurve" in o or "provision" in o) else "hp_comware"
+    if "mikrotik" in v:
+        return "mikrotik_routeros"
+    return "linux"
+
+
+def _update_bulk_job_status(db, job_id: int):
+    import models
+    job = db.query(models.BulkConfigJob).filter_by(id=job_id).first()
+    if job and all(r.status in ("success", "error") for r in job.results):
+        job.status = "done"
+        db.commit()
 
 
 def _cleanup_old_backups(db, device_id: int, max_count: int = 3):

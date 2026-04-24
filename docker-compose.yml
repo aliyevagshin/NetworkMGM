@@ -51,11 +51,13 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-nms}:${POSTGRES_PASSWORD:-nmspassword}@postgres:5432/${POSTGRES_DB:-nmsdb}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY}
-      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY}
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production-min64chars}
+      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY:-change-this-vault-key-in-production-32ch}
       - BACKUP_DIR=/app/backups
       - FILES_DIR=/app/files
       - SSH_KEYS_DIR=/app/ssh_keys
+      - PYTHONPATH=/app
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - FIRST_ADMIN_USERNAME=${FIRST_ADMIN_USERNAME:-admin}
       - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-}
     ports:
@@ -80,11 +82,12 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-nms}:${POSTGRES_PASSWORD:-nmspassword}@postgres:5432/${POSTGRES_DB:-nmsdb}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY}
-      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY}
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production-min64chars}
+      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY:-change-this-vault-key-in-production-32ch}
       - BACKUP_DIR=/app/backups
       - FILES_DIR=/app/files
       - SSH_KEYS_DIR=/app/ssh_keys
+      - PYTHONPATH=/app
     networks:
       - nms-net
 

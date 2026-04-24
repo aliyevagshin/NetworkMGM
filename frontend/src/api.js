@@ -155,4 +155,11 @@ export const topologiesAPI = {
   delete: (id) => api.delete(`/topologies/${id}`),
 };
 
+export const bulkConfigAPI = {
+  createJob: (data) => api.post("/bulk-config/jobs", data),
+  listJobs: () => api.get("/bulk-config/jobs"),
+  getJob: (id) => api.get(`/bulk-config/jobs/${id}`),
+  deleteJob: (id) => api.delete(`/bulk-config/jobs/${id}`),
+};
+
 export default api;

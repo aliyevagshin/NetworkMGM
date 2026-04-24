@@ -14,14 +14,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react":   ["react", "react-dom", "react-router-dom"],
-          "vendor-flow":    ["reactflow"],
-          "vendor-charts":  ["recharts"],
-          "vendor-term":    ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links"],
-          "vendor-ui":      ["lucide-react", "react-hot-toast", "date-fns"],
-          "vendor-query":   ["@tanstack/react-query", "@tanstack/react-virtual"],
-          "vendor-pdf":     ["html2canvas", "jspdf"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("react") || id.includes("react-dom") || id.includes("react-router") || id.includes("scheduler")) return "vendor-react";
+          if (id.includes("reactflow") || id.includes("@reactflow")) return "vendor-flow";
+          if (id.includes("@xterm")) return "vendor-term";
+          if (id.includes("html2canvas") || id.includes("jspdf")) return "vendor-pdf";
+          if (id.includes("@tanstack")) return "vendor-query";
         },
       },
     },

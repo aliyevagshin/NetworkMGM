@@ -29,6 +29,7 @@ from routers.logs import router as logs_router
 from routers.keypass import router as keypass_router
 from routers.ldap import router as ldap_router
 from routers.topologies import router as topologies_router
+from routers.bulkconfig import router as bulkconfig_router
 
 
 @asynccontextmanager
@@ -93,10 +94,13 @@ app = FastAPI(title="NMS — Network Management System", version="1.0.0", lifesp
 
 Instrumentator().instrument(app).expose(app)
 
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "")
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,6 +124,7 @@ app.include_router(logs_router)
 app.include_router(keypass_router)
 app.include_router(ldap_router)
 app.include_router(topologies_router)
+app.include_router(bulkconfig_router)
 
 
 @app.get("/health")

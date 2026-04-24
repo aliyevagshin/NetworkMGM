@@ -16,6 +16,7 @@
 | Task queue | Celery + Redis | 5.3.6 / 7 | Async SSH/backup/IPAM tasks |
 | Auth | python-jose + passlib/bcrypt | 3.3.0 / 1.7.4 | JWT tokens + password hashing |
 | SSH | Paramiko | 3.4.0 | SSH connections to network devices |
+| Multi-vendor SSH | Netmiko | 4.3.0 | Bulk config push with vendor-aware prompt handling |
 | SNMP | pysnmp | 6.1.4 | SNMP polling (CPU, memory, interfaces) |
 | Scheduler | APScheduler | 3.10.4 | Cron jobs (backup, polling, license checks) |
 | Encryption | cryptography (Fernet/AES-256) | 42.0.5 | Vault credential encryption |
@@ -67,12 +68,13 @@ nginx:80
   └── /*                      → React SPA (port 3000, cached 1y for hashed assets)
 
 FastAPI
-  ├── Auth (JWT)
+  ├── Auth (JWT + Redis-backed rate limiting on /login)
   ├── Devices CRUD + SSH test + config pull  ──► Celery worker (async)
+  ├── Bulk Config — parallel Netmiko push to N devices ──► Celery worker (async)
   ├── IPAM — subnets, IP addresses, ICMP scan ──► Celery worker (async)
   ├── Monitoring — SNMP/ICMP polling, SSE stream
   ├── Alerts — threshold-based, auto-resolve
-  ├── Vault — AES-256 encrypted credentials
+  ├── Vault — AES-256 encrypted credentials (+ enable password)
   ├── KeyPass — password manager
   ├── Inventory — hardware + licenses + EOL tracking
   ├── Config Backups — scheduled + manual
@@ -90,7 +92,8 @@ PostgreSQL + TimescaleDB
 
 Redis
   ├── Celery broker + backend
-  └── API response cache (20s TTL for monitoring snapshots)
+  ├── API response cache (30s TTL for device list)
+  └── Login rate-limit counters (5 attempts / 60s per IP)
 
 Prometheus → scrapes :8000/metrics + :8001/metrics every 15s
 Grafana    → reads Prometheus, port 3001
@@ -116,6 +119,7 @@ Grafana    → reads Prometheus, port 3001
 | Logs | System and device log viewer |
 | Audit Log | Immutable record of all sensitive actions |
 | Users | User management with role assignment |
+| Bulk Config | Select devices + write commands → parallel Netmiko execution with live results |
 | Settings | System-wide settings (poll interval, backup schedule, etc.) |
 
 ---
@@ -129,9 +133,16 @@ Grafana    → reads Prometheus, port 3001
 - nginx configured with `proxy_buffering off` so events reach the browser immediately
 
 ### Async task queue (Celery + Redis)
-- SSH test and config pull are offloaded to Celery workers — API responds instantly with `{"queued": true}`
+- SSH test, config pull, and bulk config push are offloaded to Celery workers — API responds instantly with `{"queued": true}`
+- Bulk Config runs one Celery task per device in parallel — N devices execute simultaneously
 - IPAM subnet scan runs fully async (up to 254 hosts in parallel with semaphore=30)
 - Graceful sync fallback when Redis is unavailable (e.g. local dev without Docker)
+
+### Bulk Config (Netmiko)
+- Multi-vendor aware: auto-maps device vendor/OS to correct Netmiko driver (cisco_ios, cisco_xe, cisco_xr, cisco_nxos, cisco_asa, juniper_junos, arista_eos, fortinet, paloalto_panos, checkpoint_gaia, hp_procurve, hp_comware, mikrotik_routeros)
+- Automatically distinguishes show commands (`send_command`) from config blocks (`send_config_set`) — `conf t … end` blocks are handled correctly
+- Enable password support: if Vault credential has an enable password, Netmiko escalates to privileged exec automatically
+- Job history persisted in DB; per-device output with timing visible in UI
 
 ### Time-series database (TimescaleDB)
 - `metric_samples` table is a TimescaleDB hypertable partitioned by `timestamp`
@@ -148,9 +159,15 @@ Grafana    → reads Prometheus, port 3001
 - Prometheus scrapes backend + Celery worker every 15s, retains 30 days
 - Grafana pre-provisioned with Prometheus datasource at `http://localhost:3001` (admin / `GRAFANA_PASSWORD`)
 
+### Security hardening
+- Login rate limiting: 5 attempts per IP per 60s, backed by Redis (survives backend restarts)
+- CORS origins configurable via `ALLOWED_ORIGINS` env var (default `*` for dev, set to your domain in prod)
+- Vault credentials encrypted with AES-256 Fernet; enable passwords stored and decrypted separately
+
 ### Frontend bundle splitting (Vite)
-- 7 separate vendor chunks — react, reactflow, recharts, xterm, ui libs, query, pdf
-- Only changed chunks re-download on app updates; large deps (reactflow, recharts) cached independently
+- Vendor chunks split by function: react + router, reactflow, xterm, query, pdf
+- `manualChunks` as a function (not object) ensures React deduplication across all transitive deps
+- Only changed chunks re-download on app updates; large deps cached independently
 
 ### Database tuning
 - PostgreSQL connection pool: `pool_size=20`, `max_overflow=30`, `pool_pre_ping=True`, `pool_recycle=300`
@@ -188,4 +205,7 @@ POSTGRES_DB=nmsdb
 GRAFANA_PASSWORD=admin
 DATABASE_URL=postgresql://nms:nmspassword@postgres:5432/nmsdb
 REDIS_URL=redis://redis:6379/0
+ALLOWED_ORIGINS=http://localhost,http://yourdomain.com
 ```
+
+> `.env` is git-ignored. Never commit secrets to version control.

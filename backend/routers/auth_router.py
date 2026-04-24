@@ -8,23 +8,28 @@ from auth import (
 )
 import models
 import schemas
-from datetime import timedelta
-import time
-from collections import defaultdict
+from services import cache_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Simple in-memory rate limiter: max 5 login attempts per minute per IP
-_login_attempts: dict = defaultdict(list)
+_MAX_ATTEMPTS = 5
+_WINDOW_SEC   = 60
 
 
 def _check_rate_limit(ip: str):
-    now = time.time()
-    attempts = [t for t in _login_attempts[ip] if now - t < 60]
-    _login_attempts[ip] = attempts
-    if len(attempts) >= 5:
-        raise HTTPException(status_code=429, detail="Too many login attempts")
-    _login_attempts[ip].append(now)
+    key = f"ratelimit:login:{ip}"
+    r = cache_service._get_client()
+    if r:
+        count = r.incr(key)
+        if count == 1:
+            r.expire(key, _WINDOW_SEC)
+        if count > _MAX_ATTEMPTS:
+            ttl = r.ttl(key)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many login attempts. Try again in {ttl}s.",
+            )
+    # Redis unavailable — silently allow (fail open, don't block users)
 
 
 @router.post("/login", response_model=schemas.Token)

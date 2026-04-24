@@ -224,6 +224,33 @@ class TopologyProject(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
+class BulkConfigJob(Base):
+    __tablename__ = "bulk_config_jobs"
+    id = Column(Integer, primary_key=True)
+    label = Column(String, nullable=True)
+    commands = Column(Text)
+    status = Column(String, default="running")  # running/done
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    results = relationship("BulkConfigResult", back_populates="job", cascade="all, delete-orphan")
+
+
+class BulkConfigResult(Base):
+    __tablename__ = "bulk_config_results"
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("bulk_config_jobs.id"))
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
+    device_hostname = Column(String)
+    device_ip = Column(String)
+    status = Column(String, default="pending")  # pending/running/success/error
+    output = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    job = relationship("BulkConfigJob", back_populates="results")
+    device = relationship("Device", foreign_keys=[device_id])
+
+
 class LDAPConfig(Base):
     __tablename__ = "ldap_config"
     id = Column(Integer, primary_key=True)
