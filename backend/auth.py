@@ -81,6 +81,15 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
         return None
 
 
+def verify_token(token: str) -> str:
+    """Validate a raw JWT string and return the username. Raises JWTError on failure."""
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    username: str = payload.get("sub")
+    if not username:
+        raise JWTError("No subject in token")
+    return username
+
+
 def require_role(*roles):
     def checker(current_user: models.User = Depends(get_current_user)):
         if current_user.role not in roles:

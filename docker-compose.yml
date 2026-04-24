@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: nms-postgres
     restart: unless-stopped
     environment:
@@ -11,6 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-nmsdb}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+      - ./postgres/init-timescale.sql:/docker-entrypoint-initdb.d/init-timescale.sql:ro
     networks:
       - nms-net
     healthcheck:
@@ -62,6 +63,31 @@ services:
     networks:
       - nms-net
 
+  celery:
+    build: ./backend
+    container_name: nms-celery
+    restart: unless-stopped
+    command: celery -A tasks worker --loglevel=info --concurrency=8 -Q default
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/backups:/app/backups
+      - ./data/files:/app/files
+      - ./data/ssh_keys:/app/ssh_keys
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-nms}:${POSTGRES_PASSWORD:-nmspassword}@postgres:5432/${POSTGRES_DB:-nmsdb}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY}
+      - BACKUP_DIR=/app/backups
+      - FILES_DIR=/app/files
+      - SSH_KEYS_DIR=/app/ssh_keys
+    networks:
+      - nms-net
+
   frontend:
     build: ./frontend
     container_name: nms-frontend
@@ -78,6 +104,42 @@ services:
     depends_on:
       - backend
       - frontend
+    networks:
+      - nms-net
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: nms-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    networks:
+      - nms-net
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: nms-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost/grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
     networks:
       - nms-net
 

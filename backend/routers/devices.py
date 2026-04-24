@@ -114,28 +114,30 @@ def test_ssh(device_id: int, db: Session = Depends(get_db), current_user=Depends
     device = db.query(models.Device).filter(models.Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    cred = _get_credential(db, device)
-    if not cred:
-        return {"success": False, "error": "No credentials found"}
+    log_audit(db, current_user.username, "SSH_TEST", device.hostname, "Queued")
+    # Dispatch to Celery worker — returns immediately with task_id
     try:
-        client = ssh_service.connect(
-            host=device.ip_address,
-            port=device.ssh_port,
-            username=cred["username"],
-            password=cred["password"],
-        )
-        client.close()
-        device.status = "online"
-        device.last_seen = datetime.utcnow()
-        db.add(models.LogEntry(device_id=device.id, level="info", source="ssh", message=f"SSH test by {current_user.username} succeeded"))
-        db.commit()
-        log_audit(db, current_user.username, "SSH_TEST", device.hostname, "Success")
-        return {"success": True}
-    except Exception as e:
-        device.status = "offline"
-        db.add(models.LogEntry(device_id=device.id, level="error", source="ssh", message=f"SSH test by {current_user.username} failed: {e}"))
-        db.commit()
-        return {"success": False, "error": str(e)}
+        from tasks import task_test_ssh
+        t = task_test_ssh.delay(device_id)
+        return {"queued": True, "task_id": t.id}
+    except Exception:
+        # Celery unavailable — fall back to synchronous execution
+        cred = _get_credential(db, device)
+        if not cred:
+            return {"success": False, "error": "No credentials found"}
+        try:
+            client = ssh_service.connect(device.ip_address, device.ssh_port, cred["username"], cred["password"])
+            client.close()
+            device.status = "online"
+            device.last_seen = datetime.utcnow()
+            db.add(models.LogEntry(device_id=device.id, level="info", source="ssh", message=f"SSH test by {current_user.username} succeeded"))
+            db.commit()
+            return {"success": True}
+        except Exception as e:
+            device.status = "offline"
+            db.add(models.LogEntry(device_id=device.id, level="error", source="ssh", message=f"SSH test failed: {e}"))
+            db.commit()
+            return {"success": False, "error": str(e)}
 
 
 @router.post("/{device_id}/pull-config")
@@ -143,46 +145,33 @@ def pull_config(device_id: int, db: Session = Depends(get_db), current_user=Depe
     device = db.query(models.Device).filter(models.Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    cred = _get_credential(db, device)
-    if not cred:
-        return {"success": False, "error": "No credentials"}
-    from datetime import datetime as dt
-
-    config, err = ssh_service.get_config(
-        host=device.ip_address,
-        port=device.ssh_port,
-        username=cred["username"],
-        password=cred["password"],
-        vendor=device.vendor or "cisco",
-    )
-    if not config:
-        return {"success": False, "error": err or "Empty config returned"}
-
-    backup_dir = os.environ.get("BACKUP_DIR", "/app/backups")
-    os.makedirs(backup_dir, exist_ok=True)
-    timestamp = dt.utcnow().strftime("%Y%m%d_%H%M%S")
-    safe_name = _re.sub(r"[^\w\-]", "_", device.hostname)
-    filename = f"{safe_name}_{device.id}_{timestamp}.cfg"
-    filepath = os.path.join(backup_dir, filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, "w") as f:
-        f.write(config)
-
-    backup = models.ConfigBackup(
-        device_id=device.id,
-        filepath=filepath,
-        file_size=len(config.encode()),
-        triggered_by="manual",
-    )
-    db.add(backup)
-    device.last_backup = dt.utcnow()
-    db.commit()
-    # keep only 3 backups per device
-    _cleanup_device_backups(db, device.id, max_count=3)
-    db.add(models.LogEntry(device_id=device.id, level="info", source="ssh", message=f"Config pulled manually by {current_user.username}, saved to {filename}"))
-    db.commit()
-    log_audit(db, current_user.username, "CONFIG_PULL", device.hostname, f"Saved to {filename}")
-    return {"success": True, "filepath": filepath}
+    log_audit(db, current_user.username, "CONFIG_PULL", device.hostname, "Queued")
+    # Dispatch to Celery worker — SSH can take 30-60s, don't block the API
+    try:
+        from tasks import task_pull_config
+        t = task_pull_config.delay(device_id, triggered_by=current_user.username)
+        return {"queued": True, "task_id": t.id}
+    except Exception:
+        # Celery unavailable — fall back to synchronous
+        from datetime import datetime as dt
+        cred = _get_credential(db, device)
+        if not cred:
+            return {"success": False, "error": "No credentials"}
+        config, err = ssh_service.get_config(device.ip_address, device.ssh_port, cred["username"], cred["password"], device.vendor or "cisco")
+        if not config:
+            return {"success": False, "error": err or "Empty config returned"}
+        backup_dir = os.environ.get("BACKUP_DIR", "/app/backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        safe_name = _re.sub(r'[^\w\-]', '_', device.hostname)
+        filename = f"{safe_name}_{device.id}_{dt.utcnow().strftime('%Y%m%d_%H%M%S')}.cfg"
+        filepath  = os.path.join(backup_dir, filename)
+        with open(filepath, "w") as f:
+            f.write(config)
+        db.add(models.ConfigBackup(device_id=device.id, filepath=filepath, file_size=len(config.encode()), triggered_by="manual"))
+        device.last_backup = dt.utcnow()
+        db.commit()
+        _cleanup_device_backups(db, device.id, max_count=3)
+        return {"success": True, "filepath": filepath}
 
 
 @router.get("/{device_id}/config-history", response_model=List[schemas.BackupOut])

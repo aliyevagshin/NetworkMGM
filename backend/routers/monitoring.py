@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from database import get_db
-from auth import get_current_user
+from database import get_db, SessionLocal
+from auth import get_current_user, verify_token
 import models
 import schemas
 from services.ping_service import ping
 from services.snmp_service import poll_device_metrics
 from services import cache_service
 from datetime import datetime, timedelta
+from sse_starlette.sse import EventSourceResponse
 import asyncio
+import json
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -128,6 +130,92 @@ async def manual_poll(device_id: int, db: Session = Depends(get_db), current_use
         "ping": ping_result,
         "metrics": {s.metric: s.value for s in samples},
     }
+
+
+def _build_status_payload(db: Session) -> dict:
+    """Build the current device status snapshot (same logic as /devices)."""
+    cached = cache_service.get(_CACHE_DEVICES)
+    if cached is not None:
+        return {"type": "devices", "data": cached}
+
+    subq = (
+        db.query(
+            models.MetricSample.device_id,
+            models.MetricSample.metric,
+            func.max(models.MetricSample.timestamp).label("max_ts"),
+        )
+        .group_by(models.MetricSample.device_id, models.MetricSample.metric)
+        .subquery()
+    )
+    latest = (
+        db.query(models.MetricSample)
+        .join(
+            subq,
+            (models.MetricSample.device_id == subq.c.device_id)
+            & (models.MetricSample.metric == subq.c.metric)
+            & (models.MetricSample.timestamp == subq.c.max_ts),
+        )
+        .all()
+    )
+    metrics_map: dict = {}
+    for s in latest:
+        metrics_map.setdefault(s.device_id, {})[s.metric] = s.value
+
+    devices = db.query(models.Device).all()
+    result = [
+        {
+            "id": d.id,
+            "hostname": d.hostname,
+            "ip_address": d.ip_address,
+            "status": d.status,
+            "last_seen": str(d.last_seen) if d.last_seen else None,
+            "metrics": metrics_map.get(d.id, {}),
+        }
+        for d in devices
+    ]
+    return {"type": "devices", "data": result}
+
+
+def _build_alerts_payload(db: Session) -> dict:
+    critical = db.query(models.Alert).filter(
+        models.Alert.resolved == False, models.Alert.severity == "critical"
+    ).count()
+    warning = db.query(models.Alert).filter(
+        models.Alert.resolved == False, models.Alert.severity == "warning"
+    ).count()
+    return {"type": "alerts", "data": {"critical": critical, "warning": warning}}
+
+
+@router.get("/stream")
+async def monitoring_stream(request: Request, token: str = ""):
+    """SSE endpoint — pushes device status + alert counts every 8 seconds.
+    Token passed as query param because EventSource API cannot set headers.
+    """
+    # Validate token manually (EventSource can't send Authorization header)
+    try:
+        verify_token(token)
+    except Exception:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    async def event_gen():
+        while True:
+            if await request.is_disconnected():
+                break
+            db = SessionLocal()
+            try:
+                devices_payload = _build_status_payload(db)
+                alerts_payload  = _build_alerts_payload(db)
+                yield {"data": json.dumps(devices_payload, default=str)}
+                await asyncio.sleep(0.05)
+                yield {"data": json.dumps(alerts_payload, default=str)}
+            except Exception:
+                pass
+            finally:
+                db.close()
+            await asyncio.sleep(8)
+
+    return EventSourceResponse(event_gen())
 
 
 def _check_threshold(metric: str, value: float) -> dict | None:

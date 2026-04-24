@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 import os
+from sqlalchemy import text
+from prometheus_fastapi_instrumentator import Instrumentator
 
-from database import engine, SessionLocal
+from database import engine, SessionLocal, DATABASE_URL
 import models
 from auth import hash_password
 from scheduler import scheduler
@@ -32,6 +34,15 @@ from routers.topologies import router as topologies_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
+
+    if "postgresql" in DATABASE_URL:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
+            conn.execute(text(
+                "SELECT create_hypertable('metric_samples', 'timestamp', "
+                "if_not_exists => TRUE, migrate_data => TRUE);"
+            ))
+            conn.commit()
 
     db = SessionLocal()
     admin_username = os.environ.get("FIRST_ADMIN_USERNAME", "admin")
@@ -67,6 +78,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="NMS — Network Management System", version="1.0.0", lifespan=lifespan)
+
+Instrumentator().instrument(app).expose(app)
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(

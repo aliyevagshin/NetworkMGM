@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { monitoringAPI, alertsAPI } from "../api";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
-import { RefreshCw, CheckCircle, X } from "lucide-react";
+import { RefreshCw, CheckCircle, X, Wifi } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
+import { useMonitoringSSE } from "../hooks/useSSE";
 
 function Sparkline({ data, color = "#4f7cff" }) {
   if (!data || data.length < 2) return <span className="text-xs text-muted">—</span>;
@@ -88,23 +89,39 @@ const ROW_HEIGHT = 48;
 
 export default function Monitoring() {
   const qc = useQueryClient();
-  const [sparklines, setSparklines] = useState({});
-  const [chart, setChart] = useState(null);
+  const [sparklines, setSparklines]   = useState({});
+  const [chart, setChart]             = useState(null);
+  const [liveDevices, setLiveDevices] = useState(null);  // SSE-updated device list
+  const [sseActive, setSseActive]     = useState(false);
   const tableRef = useRef(null);
 
-  const { data: devices = [], isLoading, refetch: refetchDevices } = useQuery({
+  // Initial load via React Query; SSE keeps it fresh afterwards
+  const { data: fetchedDevices = [], isLoading, refetch: refetchDevices } = useQuery({
     queryKey: ["monitoring"],
     queryFn: () => monitoringAPI.all().then(r => r.data),
-    staleTime: 20_000,
-    refetchInterval: 30_000,
+    staleTime: 60_000,
+    refetchInterval: false,  // SSE drives updates — no polling needed
   });
 
   const { data: alerts = [], refetch: refetchAlerts } = useQuery({
     queryKey: ["alerts"],
     queryFn: () => alertsAPI.list().then(r => r.data),
-    staleTime: 15_000,
-    refetchInterval: 30_000,
+    staleTime: 30_000,
+    refetchInterval: false,
   });
+
+  // SSE: push updates directly into state, no HTTP polling
+  const handleSSE = useCallback((payload) => {
+    if (payload.type === "devices") {
+      setSseActive(true);
+      setLiveDevices(payload.data);
+      // Sync React Query cache so other pages see fresh data too
+      qc.setQueryData(["monitoring"], payload.data);
+    }
+  }, [qc]);
+  useMonitoringSSE(handleSSE);
+
+  const devices = liveDevices ?? fetchedDevices;
 
   // Load sparklines in batches as devices arrive
   useEffect(() => {
@@ -131,7 +148,7 @@ export default function Monitoring() {
     overscan: 8,
   });
 
-  const load = () => { refetchDevices(); refetchAlerts(); };
+  const load = () => { refetchDevices(); refetchAlerts(); setLiveDevices(null); };
 
   const pollDevice = async (id) => {
     toast.loading("Polling...", { id: "poll" });
@@ -157,9 +174,17 @@ export default function Monitoring() {
         <div className="xl:col-span-2">
           <div className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col">
             <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
-              <span className="font-semibold text-white text-sm">
-                Device Status {devices.length > 0 && <span className="text-muted font-normal">({devices.length})</span>}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-white text-sm">
+                  Device Status {devices.length > 0 && <span className="text-muted font-normal">({devices.length})</span>}
+                </span>
+                {sseActive && (
+                  <span className="flex items-center gap-1 text-[10px] text-green-400 font-mono">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+                    live
+                  </span>
+                )}
+              </div>
               <button onClick={load} className="text-muted hover:text-white transition-colors">
                 <RefreshCw size={13} />
               </button>

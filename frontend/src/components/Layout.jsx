@@ -1,24 +1,26 @@
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
-import { useEffect } from "react";
-import { alertsAPI, authAPI } from "../api";
+import { useEffect, useCallback } from "react";
+import { authAPI } from "../api";
 import { useAlertStore, useAuthStore } from "../store";
-import { useQuery } from "@tanstack/react-query";
+import { useMonitoringSSE } from "../hooks/useSSE";
 
 export default function Layout({ title, children }) {
   const setCount = useAlertStore((s) => s.setCount);
-  const setUser = useAuthStore((s) => s.setUser);
+  const setUser  = useAuthStore((s) => s.setUser);
 
   useEffect(() => {
     authAPI.me().then((r) => setUser(r.data)).catch(() => {});
   }, []);
 
-  useQuery({
-    queryKey: ["alert-count"],
-    queryFn: () => alertsAPI.count().then((r) => { setCount(r.data); return r.data; }),
-    staleTime: 10_000,
-    refetchInterval: 20_000,
-  });
+  // SSE replaces the 20s polling interval for alert badge counts
+  const handleSSE = useCallback((payload) => {
+    if (payload.type === "alerts") {
+      setCount(payload.data);
+    }
+  }, [setCount]);
+
+  useMonitoringSSE(handleSSE);
 
   return (
     <div className="flex min-h-screen bg-bg">

@@ -10,9 +10,10 @@
 | Layer | Technology | Version | Purpose |
 |-------|-----------|---------|---------|
 | Runtime | Python | 3.11 | Backend language |
-| Framework | FastAPI | 0.111.0 | REST API + WebSocket endpoints |
+| Framework | FastAPI | 0.111.0 | REST API + WebSocket + SSE endpoints |
 | ORM | SQLAlchemy | 2.0.30 | Database access layer |
-| Database | SQLite (WAL mode) | — | Persistent storage (swappable to PostgreSQL) |
+| Database | PostgreSQL + TimescaleDB | 16 | Persistent storage + time-series hypertables |
+| Task queue | Celery + Redis | 5.3.6 / 7 | Async SSH/backup/IPAM tasks |
 | Auth | python-jose + passlib/bcrypt | 3.3.0 / 1.7.4 | JWT tokens + password hashing |
 | SSH | Paramiko | 3.4.0 | SSH connections to network devices |
 | SNMP | pysnmp | 6.1.4 | SNMP polling (CPU, memory, interfaces) |
@@ -21,6 +22,7 @@
 | LDAP | ldap3 | 2.9.1 | Active Directory / LDAP authentication |
 | Async server | uvicorn + uvloop | 0.29.0 / 0.19.0 | High-performance async HTTP server |
 | Compression | FastAPI GZipMiddleware | built-in | Response compression (>1KB responses) |
+| Metrics | prometheus-fastapi-instrumentator | 6.1.0 | `/metrics` endpoint for Prometheus |
 
 ### Frontend
 | Layer | Technology | Version | Purpose |
@@ -42,8 +44,12 @@
 ### Infrastructure
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| Reverse proxy | nginx | Routes /api/ → FastAPI, / → React, /ws/ → WebSocket |
-| Containerisation | Docker + Docker Compose | 3-container setup (backend, frontend, nginx) |
+| Reverse proxy | nginx | Routes /api/ → FastAPI, /ws/ → WebSocket, static asset caching |
+| Task queue | Celery worker | Processes async SSH/backup/IPAM tasks from Redis queue |
+| Metrics | Prometheus | Scrapes backend + Celery worker metrics every 15s |
+| Dashboards | Grafana | Pre-provisioned Prometheus datasource, 30d retention |
+| Database | PostgreSQL + TimescaleDB | Relational storage + time-series hypertable for metrics |
+| Containerisation | Docker Compose | Full stack: postgres, redis, backend, celery, frontend, nginx, prometheus, grafana |
 
 ---
 
@@ -54,20 +60,22 @@ Browser
   │
   ▼
 nginx:80
-  ├── /api/*   → FastAPI (port 8000)
-  ├── /ws/*    → FastAPI WebSocket (SSH proxy)
-  └── /*       → React SPA (port 3000)
+  ├── /api/monitoring/stream  → FastAPI SSE (no buffering)
+  ├── /api/*                  → FastAPI (port 8000)
+  ├── /ws/*                   → FastAPI WebSocket (SSH proxy)
+  ├── /metrics                → FastAPI /metrics (Prometheus)
+  └── /*                      → React SPA (port 3000, cached 1y for hashed assets)
 
 FastAPI
   ├── Auth (JWT)
-  ├── Devices CRUD + SSH test + config pull
-  ├── IPAM — subnets, IP addresses, ICMP scan
-  ├── Monitoring — SNMP/ICMP polling, metrics history
+  ├── Devices CRUD + SSH test + config pull  ──► Celery worker (async)
+  ├── IPAM — subnets, IP addresses, ICMP scan ──► Celery worker (async)
+  ├── Monitoring — SNMP/ICMP polling, SSE stream
   ├── Alerts — threshold-based, auto-resolve
   ├── Vault — AES-256 encrypted credentials
   ├── KeyPass — password manager
   ├── Inventory — hardware + licenses + EOL tracking
-  ├── Config Backups — scheduled + manual, restore via SSH
+  ├── Config Backups — scheduled + manual
   ├── Files — upload/download/folder management
   ├── Topology — multi-project diagram save/load
   ├── Logs — system + device log entries
@@ -76,9 +84,16 @@ FastAPI
   ├── LDAP — Active Directory integration
   └── Settings — key-value system config
 
-SQLite (WAL mode)
-  └── WAL journal + 64MB cache + memory-mapped I/O
-      → safe concurrent reads during writes
+PostgreSQL + TimescaleDB
+  ├── metric_samples → hypertable (time-series, auto-partitioned by timestamp)
+  └── Connection pool: size=20, overflow=30, pre-ping, recycle=300s
+
+Redis
+  ├── Celery broker + backend
+  └── API response cache (20s TTL for monitoring snapshots)
+
+Prometheus → scrapes :8000/metrics + :8001/metrics every 15s
+Grafana    → reads Prometheus, port 3001
 ```
 
 ---
@@ -90,9 +105,9 @@ SQLite (WAL mode)
 | Dashboard | Live device status, alert counts, metric summaries |
 | Device Hub | CRUD, SSH test, config pull, auto-detect, history |
 | SSH Console | xterm.js WebSocket terminal to any device |
-| Topology | Drag-and-drop network diagrams — multi-project, cable types, port labels, PDF export |
+| Topology | Drag-and-drop network diagrams — multi-project, cable types, port labels, text labels, PDF export |
 | IPAM | Subnet management, IP allocation, ICMP scan |
-| Monitoring | Charts: CPU, memory, RTT, packet loss per device |
+| Monitoring | Charts: CPU, memory, RTT, packet loss per device — live via SSE |
 | Inventory | Hardware items, licenses, EOL/expiry alerts |
 | Config Backups | Per-device backup history, download, restore |
 | Files | File repository with folder support, upload/download |
@@ -105,19 +120,41 @@ SQLite (WAL mode)
 
 ---
 
-## Performance Optimisations Applied
+## Performance Optimisations
 
-### Backend
-- **SQLite WAL mode** — Write-Ahead Logging allows concurrent readers during writes
-- **SQLite pragmas** — 64MB page cache, memory-mapped I/O (256MB), NORMAL sync
-- **GZip middleware** — compresses API responses ≥1KB (JSON lists compress ~70-80%)
-- **uvloop** — replaces asyncio event loop with libuv for ~2× async throughput
-- **Connection pooling** — pre-configured for PostgreSQL migration (pool_size=20)
+### Real-time push (SSE)
+- `/api/monitoring/stream` pushes device status + alert counts every 8s
+- Replaces polling on Monitoring and Dashboard pages — zero wasted requests when nothing changes
+- Exponential back-off reconnect (1s → 30s max) on disconnect
+- nginx configured with `proxy_buffering off` so events reach the browser immediately
 
-### Frontend
-- **Vite manual chunk splitting** — 7 separate vendor bundles so browsers cache dependencies independently; only changed chunks re-download on updates
-- **React Query** — deduplicates identical in-flight requests, caches responses, background-refetches stale data
-- **TanStack Virtual** — renders only visible rows in large device/log tables (handles 10,000+ rows without jank)
+### Async task queue (Celery + Redis)
+- SSH test and config pull are offloaded to Celery workers — API responds instantly with `{"queued": true}`
+- IPAM subnet scan runs fully async (up to 254 hosts in parallel with semaphore=30)
+- Graceful sync fallback when Redis is unavailable (e.g. local dev without Docker)
+
+### Time-series database (TimescaleDB)
+- `metric_samples` table is a TimescaleDB hypertable partitioned by `timestamp`
+- Chunk-based storage gives orders-of-magnitude faster range queries vs plain PostgreSQL table scans
+- Hypertable created automatically on first startup via `create_hypertable(..., if_not_exists=TRUE)`
+
+### nginx caching + gzip
+- Static JS/CSS/font assets served with `Cache-Control: public, immutable; expires 1y` — browser caches across deployments (Vite hashes filenames)
+- `index.html` served with `no-cache` so new deploys are picked up immediately
+- gzip level 5 on all text responses; GZipMiddleware in FastAPI for direct connections
+
+### Metrics + observability (Prometheus + Grafana)
+- FastAPI auto-instruments all routes via `prometheus-fastapi-instrumentator` — request count, latency histograms, status codes exposed at `/metrics`
+- Prometheus scrapes backend + Celery worker every 15s, retains 30 days
+- Grafana pre-provisioned with Prometheus datasource at `http://localhost:3001` (admin / `GRAFANA_PASSWORD`)
+
+### Frontend bundle splitting (Vite)
+- 7 separate vendor chunks — react, reactflow, recharts, xterm, ui libs, query, pdf
+- Only changed chunks re-download on app updates; large deps (reactflow, recharts) cached independently
+
+### Database tuning
+- PostgreSQL connection pool: `pool_size=20`, `max_overflow=30`, `pool_pre_ping=True`, `pool_recycle=300`
+- SQLite (local dev): WAL mode, 64MB page cache, 256MB mmap, NORMAL sync
 
 ---
 
@@ -125,13 +162,14 @@ SQLite (WAL mode)
 
 ```bash
 # Copy env file and fill in secrets
-cp nms/.env.example nms/.env
+cp .env.example .env
 
 # Build and start all containers
-cd nms
 docker compose up --build
 
-# App available at http://localhost
+# App:       http://localhost
+# Grafana:   http://localhost:3001  (admin / GRAFANA_PASSWORD)
+# Prometheus: http://localhost:9090
 # Default login: admin / (set FIRST_ADMIN_PASSWORD in .env)
 ```
 
@@ -144,5 +182,10 @@ SECRET_KEY=<random 64-char string>
 VAULT_MASTER_KEY=<vault encryption master password>
 FIRST_ADMIN_USERNAME=admin
 FIRST_ADMIN_PASSWORD=Admin1234!
-DATABASE_URL=sqlite:////app/data/nms.db
+POSTGRES_USER=nms
+POSTGRES_PASSWORD=nmspassword
+POSTGRES_DB=nmsdb
+GRAFANA_PASSWORD=admin
+DATABASE_URL=postgresql://nms:nmspassword@postgres:5432/nmsdb
+REDIS_URL=redis://redis:6379/0
 ```
