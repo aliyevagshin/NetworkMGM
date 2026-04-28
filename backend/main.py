@@ -30,6 +30,7 @@ from routers.keypass import router as keypass_router
 from routers.ldap import router as ldap_router
 from routers.topologies import router as topologies_router
 from routers.bulkconfig import router as bulkconfig_router
+from routers.proxy import router as proxy_router
 
 
 @asynccontextmanager
@@ -125,6 +126,7 @@ app.include_router(keypass_router)
 app.include_router(ldap_router)
 app.include_router(topologies_router)
 app.include_router(bulkconfig_router)
+app.include_router(proxy_router)
 
 
 @app.get("/health")
