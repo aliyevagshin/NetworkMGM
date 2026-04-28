@@ -7,9 +7,12 @@ import models
 import schemas
 import os
 import re as _re
+import asyncio
+import ipaddress
 from services.ssh_service import SSHService
 from services.crypto_service import CryptoService
 from services import cache_service
+from services import ping_service
 from datetime import datetime
 
 
@@ -221,6 +224,48 @@ def auto_detect(device_id: int, db: Session = Depends(get_db), current_user=Depe
         return {"success": True, "serial": serial, "os_version": os_ver, "raw": stdout[:500]}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.post("/discover", response_model=schemas.DiscoverResult)
+async def discover_subnet(
+    req: schemas.DiscoverRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    try:
+        network = ipaddress.ip_network(req.subnet, strict=False)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid subnet format (e.g. 192.168.1.0/24)")
+
+    if network.num_addresses > 1024:
+        raise HTTPException(status_code=400, detail="Subnet too large — max /22 (1022 hosts)")
+
+    hosts = list(network.hosts())
+    existing = db.query(models.Device).with_entities(models.Device.ip_address, models.Device.hostname).all()
+    existing_map = {row.ip_address: row.hostname for row in existing}
+
+    sem = asyncio.Semaphore(50)
+
+    async def check(ip):
+        async with sem:
+            result = await ping_service.ping(str(ip), count=1)
+            return str(ip), result["reachable"], result["rtt_ms"]
+
+    results = await asyncio.gather(*[check(ip) for ip in hosts])
+
+    discovered = []
+    for ip_str, reachable, rtt_ms in results:
+        if reachable:
+            discovered.append(schemas.DiscoveredHost(
+                ip=ip_str,
+                rtt_ms=rtt_ms,
+                already_exists=ip_str in existing_map,
+                hostname=existing_map.get(ip_str),
+            ))
+
+    discovered.sort(key=lambda h: [int(x) for x in h.ip.split(".")])
+    log_audit(db, current_user.username, "DEVICE_DISCOVER", req.subnet, f"{len(discovered)} hosts found")
+    return schemas.DiscoverResult(subnet=req.subnet, discovered=discovered)
 
 
 def _parse_version_output(output: str, vendor: str) -> tuple:

@@ -336,6 +336,23 @@ class KeyPassOut(KeyPassBase):
         from_attributes = True
 
 
+# --- Auto Discovery ---
+class DiscoverRequest(BaseModel):
+    subnet: str
+
+
+class DiscoveredHost(BaseModel):
+    ip: str
+    rtt_ms: Optional[float]
+    already_exists: bool
+    hostname: Optional[str] = None
+
+
+class DiscoverResult(BaseModel):
+    subnet: str
+    discovered: List[DiscoveredHost]
+
+
 # --- LDAP Config ---
 class LDAPConfigBase(BaseModel):
     server: Optional[str] = None

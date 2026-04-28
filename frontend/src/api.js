@@ -39,6 +39,7 @@ export const devicesAPI = {
   pullConfig: (id) => api.post(`/devices/${id}/pull-config`),
   configHistory: (id) => api.get(`/devices/${id}/config-history`),
   autoDetect: (id) => api.post(`/devices/${id}/detect`),
+  discover: (subnet) => api.post("/devices/discover", { subnet }),
 };
 
 export const ipamAPI = {
