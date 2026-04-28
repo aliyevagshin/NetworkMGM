@@ -35,10 +35,12 @@ const DONUT_COLORS = { online: "#22c55e", offline: "#ef4444", unknown: "#6b7280"
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { data: devices = [], isLoading: loadD } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
-  const { data: alerts = [], isLoading: loadA } = useQuery({ queryKey: ["alerts"], queryFn: () => alertsAPI.list().then(r => r.data), staleTime: 10_000, refetchInterval: 30_000 });
-  // SSE in Layout keeps the monitoring cache fresh — no extra polling here
-  const { data: monDevices = [] } = useQuery({ queryKey: ["monitoring"], queryFn: () => monitoringAPI.all().then(r => r.data), staleTime: 60_000, refetchInterval: false });
+  const { data: rawDevices, isLoading: loadD } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
+  const { data: rawAlerts, isLoading: loadA } = useQuery({ queryKey: ["alerts"], queryFn: () => alertsAPI.list().then(r => r.data), staleTime: 10_000, refetchInterval: 30_000 });
+  const { data: rawMonDevices } = useQuery({ queryKey: ["monitoring"], queryFn: () => monitoringAPI.all().then(r => r.data), staleTime: 60_000, refetchInterval: false });
+  const devices    = Array.isArray(rawDevices)    ? rawDevices    : [];
+  const alerts     = Array.isArray(rawAlerts)     ? rawAlerts     : [];
+  const monDevices = Array.isArray(rawMonDevices) ? rawMonDevices : [];
   const loading = loadD || loadA;
 
   const online = devices.filter((d) => d.status === "online").length;

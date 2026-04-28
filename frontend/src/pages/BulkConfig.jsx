@@ -140,13 +140,14 @@ export default function BulkConfig() {
     queryFn: () => devicesAPI.list(),
     select: (r) => r.data,
   });
-  const devices = devicesRes || [];
+  const devices = Array.isArray(devicesRes) ? devicesRes : [];
 
-  const { data: jobs = [], refetch: refetchJobs } = useQuery({
+  const { data: rawJobs, refetch: refetchJobs } = useQuery({
     queryKey: ["bulk-config-jobs"],
     queryFn: () => bulkConfigAPI.listJobs().then((r) => r.data),
     refetchInterval: false,
   });
+  const jobs = Array.isArray(rawJobs) ? rawJobs : [];
 
   // Poll active job until done
   useEffect(() => {
