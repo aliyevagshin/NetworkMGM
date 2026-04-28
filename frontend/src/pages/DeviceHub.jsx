@@ -232,8 +232,10 @@ export default function DeviceHub() {
   const [sortDir, setSortDir] = useState(1);
   const [filter, setFilter] = useState("");
 
-  const { data: devices = [], isLoading: loading } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
-  const { data: vaultCreds = [] } = useQuery({ queryKey: ["vault"], queryFn: () => vaultAPI.list().then(r => r.data), staleTime: 60_000 });
+  const { data: rawDevices, isLoading: loading } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
+  const { data: rawVaultCreds } = useQuery({ queryKey: ["vault"], queryFn: () => vaultAPI.list().then(r => r.data), staleTime: 60_000 });
+  const devices = Array.isArray(rawDevices) ? rawDevices : [];
+  const vaultCreds = Array.isArray(rawVaultCreds) ? rawVaultCreds : [];
 
   const load = () => qc.invalidateQueries({ queryKey: ["devices"] });
 
