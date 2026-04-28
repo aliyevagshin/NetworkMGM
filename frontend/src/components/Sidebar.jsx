@@ -2,7 +2,7 @@ import { NavLink, Link } from "react-router-dom";
 import {
   LayoutDashboard, Server, Terminal, Network, Activity,
   BarChart2, Package, FolderOpen, Lock, FileText, Settings, LogOut,
-  HardDrive, ScrollText, KeyRound, SendToBack,
+  HardDrive, ScrollText, KeyRound, SendToBack, Globe,
 } from "lucide-react";
 import { useAuthStore } from "../store";
 
@@ -10,6 +10,7 @@ const nav = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/devices", icon: Server, label: "Devices" },
   { to: "/ssh", icon: Terminal, label: "SSH Console" },
+  { to: "/webconsole", icon: Globe, label: "Web Console" },
   { to: "/bulk-config", icon: SendToBack, label: "Bulk Config" },
   { to: "/ipam", icon: Network, label: "IPAM" },
   { to: "/topology", icon: Activity, label: "Topology" },

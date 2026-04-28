@@ -29,7 +29,8 @@ class ErrorBoundary extends Component {
 
 // Lazy-load heavy pages — each becomes its own JS chunk
 const DeviceHub  = lazy(() => import("./pages/DeviceHub"));
-const SSHConsole = lazy(() => import("./pages/SSHConsole"));
+const SSHConsole  = lazy(() => import("./pages/SSHConsole"));
+const WebConsole  = lazy(() => import("./pages/WebConsole"));
 const IPAM       = lazy(() => import("./pages/IPAM"));
 const Topology   = lazy(() => import("./pages/Topology"));
 const Monitoring = lazy(() => import("./pages/Monitoring"));
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="/"          element={<Protected><Dashboard /></Protected>} />
           <Route path="/devices"   element={<Protected><DeviceHub /></Protected>} />
           <Route path="/ssh"       element={<Protected><SSHConsole /></Protected>} />
+          <Route path="/webconsole" element={<Protected><WebConsole /></Protected>} />
           <Route path="/ipam"      element={<Protected><IPAM /></Protected>} />
           <Route path="/topology"  element={<Protected><Topology /></Protected>} />
           <Route path="/monitoring" element={<Protected><Monitoring /></Protected>} />
