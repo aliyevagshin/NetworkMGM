@@ -263,3 +263,21 @@ class LDAPConfig(Base):
     user_search_filter = Column(String, default="(sAMAccountName={username})")
     default_role = Column(String, default="operator")
     enabled = Column(Boolean, default=False)
+
+
+class FlowRecord(Base):
+    __tablename__ = "flow_records"
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), index=True)
+    src_ip = Column(String)
+    dst_ip = Column(String)
+    src_port = Column(Integer)
+    dst_port = Column(Integer)
+    protocol = Column(String)   # TCP/UDP/ICMP/GRE/OSPF
+    bytes = Column(Integer)
+    packets = Column(Integer)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_flowrecord_device_ts", "device_id", "timestamp"),
+    )

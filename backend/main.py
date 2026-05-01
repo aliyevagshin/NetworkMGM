@@ -31,6 +31,8 @@ from routers.ldap import router as ldap_router
 from routers.topologies import router as topologies_router
 from routers.bulkconfig import router as bulkconfig_router
 from routers.proxy import router as proxy_router
+from routers.netflow import router as netflow_router
+from services import netflow_service
 
 
 @asynccontextmanager
@@ -87,7 +89,9 @@ async def lifespan(app: FastAPI):
     db.close()
 
     scheduler.start()
+    await netflow_service.start(SessionLocal)
     yield
+    await netflow_service.stop()
     scheduler.shutdown(wait=False)
 
 
@@ -127,6 +131,7 @@ app.include_router(ldap_router)
 app.include_router(topologies_router)
 app.include_router(bulkconfig_router)
 app.include_router(proxy_router)
+app.include_router(netflow_router)
 
 
 @app.get("/health")

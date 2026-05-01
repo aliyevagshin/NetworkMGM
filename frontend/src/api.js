@@ -163,4 +163,11 @@ export const bulkConfigAPI = {
   deleteJob: (id) => api.delete(`/bulk-config/jobs/${id}`),
 };
 
+export const netflowAPI = {
+  devices: () => api.get("/netflow/devices"),
+  flows: (params) => api.get("/netflow/flows", { params }),
+  summary: (deviceId, hours = 1) =>
+    api.get("/netflow/summary", { params: { device_id: deviceId || undefined, hours } }),
+};
+
 export default api;

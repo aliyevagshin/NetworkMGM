@@ -43,6 +43,7 @@ const Backup     = lazy(() => import("./pages/Backup"));
 const Logs       = lazy(() => import("./pages/Logs"));
 const BulkConfig = lazy(() => import("./pages/BulkConfig"));
 const KeyPass    = lazy(() => import("./pages/KeyPass"));
+const NetFlow    = lazy(() => import("./pages/NetFlow"));
 
 function PageLoader() {
   return (
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="/logs"      element={<Protected><Logs /></Protected>} />
           <Route path="/docs"      element={<Protected><Docs /></Protected>} />
           <Route path="/settings"  element={<Protected><Settings /></Protected>} />
+          <Route path="/netflow"   element={<Protected><NetFlow /></Protected>} />
         </Routes>
       </Suspense>
     </BrowserRouter>
