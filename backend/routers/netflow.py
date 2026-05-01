@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta
+from collections import defaultdict
 from database import get_db
 from auth import get_current_user
 import models
@@ -16,7 +17,6 @@ def get_devices(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Return only router and firewall devices."""
     devices = (
         db.query(models.Device)
         .filter(models.Device.device_type.in_(_NF_TYPES))
@@ -94,24 +94,32 @@ def get_summary(
         proto[p]["count"] += 1
         proto[p]["bytes"] += f.bytes
 
-    # Top 10 source IPs by bytes
+    # Top 10 source IPs
     src: dict[str, int] = {}
     for f in flows:
         src[f.src_ip] = src.get(f.src_ip, 0) + f.bytes
     top_talkers = sorted(
         [{"ip": ip, "bytes": b} for ip, b in src.items()],
-        key=lambda x: x["bytes"],
-        reverse=True,
+        key=lambda x: x["bytes"], reverse=True,
     )[:10]
 
-    # Top 10 destination IPs by bytes
+    # Top 10 destination IPs
     dst: dict[str, int] = {}
     for f in flows:
         dst[f.dst_ip] = dst.get(f.dst_ip, 0) + f.bytes
     top_destinations = sorted(
         [{"ip": ip, "bytes": b} for ip, b in dst.items()],
-        key=lambda x: x["bytes"],
-        reverse=True,
+        key=lambda x: x["bytes"], reverse=True,
+    )[:10]
+
+    # Top 10 src→dst connections
+    conn: dict[tuple, int] = {}
+    for f in flows:
+        key = (f.src_ip, f.dst_ip)
+        conn[key] = conn.get(key, 0) + f.bytes
+    top_connections = sorted(
+        [{"src": s, "dst": d, "bytes": b} for (s, d), b in conn.items()],
+        key=lambda x: x["bytes"], reverse=True,
     )[:10]
 
     return {
@@ -123,4 +131,32 @@ def get_summary(
         ),
         "top_talkers": top_talkers,
         "top_destinations": top_destinations,
+        "top_connections": top_connections,
     }
+
+
+@router.get("/traffic-timeline")
+def traffic_timeline(
+    device_id: Optional[int] = Query(None),
+    hours: int = Query(1, ge=1, le=24),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Aggregate flow bytes/packets by 1-minute buckets for the live chart."""
+    since = datetime.utcnow() - timedelta(hours=hours)
+    q = db.query(models.FlowRecord).filter(models.FlowRecord.timestamp >= since)
+    if device_id:
+        q = q.filter(models.FlowRecord.device_id == device_id)
+    rows = q.all()
+
+    buckets: dict[str, dict] = defaultdict(lambda: {"bytes": 0, "packets": 0})
+    for r in rows:
+        if r.timestamp:
+            key = r.timestamp.replace(second=0, microsecond=0).strftime("%H:%M")
+            buckets[key]["bytes"] += r.bytes
+            buckets[key]["packets"] += r.packets
+
+    return [
+        {"time": k, "bytes": v["bytes"], "packets": v["packets"]}
+        for k, v in sorted(buckets.items())
+    ]

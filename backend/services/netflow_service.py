@@ -148,6 +148,7 @@ async def _flow_consumer(queue: asyncio.Queue, db_factory):
 
 async def _flow_simulator(db_factory):
     import models
+    from services.notification_service import fire_triggers
     while True:
         try:
             await asyncio.sleep(60)
@@ -162,9 +163,20 @@ async def _flow_simulator(db_factory):
                 db.query(models.FlowRecord).filter(
                     models.FlowRecord.timestamp < cutoff
                 ).delete(synchronize_session=False)
+
                 for dev in devices:
-                    for f in generate_simulated_flows(count=random.randint(5, 12)):
+                    new_flows = generate_simulated_flows(count=random.randint(5, 12))
+                    for f in new_flows:
                         db.add(models.FlowRecord(device_id=dev.id, **f))
+                    # Check traffic_threshold triggers for this device
+                    bytes_this_min = sum(f["bytes"] for f in new_flows)
+                    fire_triggers(
+                        db,
+                        "traffic_threshold",
+                        f"High Traffic: {dev.hostname}",
+                        f"{dev.hostname} generated {bytes_this_min:,} bytes in the last minute",
+                        device_id=dev.id,
+                    )
                 db.commit()
             finally:
                 db.close()

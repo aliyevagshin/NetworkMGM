@@ -168,6 +168,20 @@ export const netflowAPI = {
   flows: (params) => api.get("/netflow/flows", { params }),
   summary: (deviceId, hours = 1) =>
     api.get("/netflow/summary", { params: { device_id: deviceId || undefined, hours } }),
+  timeline: (deviceId, hours = 1) =>
+    api.get("/netflow/traffic-timeline", { params: { device_id: deviceId || undefined, hours } }),
+};
+
+export const notificationsAPI = {
+  channels: () => api.get("/notifications/channels"),
+  createChannel: (data) => api.post("/notifications/channels", data),
+  updateChannel: (id, data) => api.put(`/notifications/channels/${id}`, data),
+  deleteChannel: (id) => api.delete(`/notifications/channels/${id}`),
+  testChannel: (id) => api.post(`/notifications/channels/${id}/test`),
+  triggers: () => api.get("/notifications/triggers"),
+  createTrigger: (data) => api.post("/notifications/triggers", data),
+  updateTrigger: (id, data) => api.put(`/notifications/triggers/${id}`, data),
+  deleteTrigger: (id) => api.delete(`/notifications/triggers/${id}`),
 };
 
 export default api;

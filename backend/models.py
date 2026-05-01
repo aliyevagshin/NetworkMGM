@@ -265,6 +265,30 @@ class LDAPConfig(Base):
     enabled = Column(Boolean, default=False)
 
 
+class NotificationChannel(Base):
+    __tablename__ = "notification_channels"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    channel_type = Column(String)  # email / teams / slack / webhook
+    config = Column(Text)          # JSON: smtp settings or webhook_url
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AlertTrigger(Base):
+    __tablename__ = "alert_triggers"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    event_type = Column(String)    # device_down / device_up / cpu_high / memory_high / traffic_threshold
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)  # None = all devices
+    threshold = Column(Float, nullable=True)      # % for cpu/memory, bytes/min for traffic
+    channel_id = Column(Integer, ForeignKey("notification_channels.id"))
+    cooldown_minutes = Column(Integer, default=30)
+    last_fired = Column(DateTime, nullable=True)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class FlowRecord(Base):
     __tablename__ = "flow_records"
     id = Column(Integer, primary_key=True)

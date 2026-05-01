@@ -110,10 +110,11 @@ async def scheduled_config_backup():
     db.close()
 
 
-@scheduler.scheduled_job("interval", seconds=30)
+@scheduler.scheduled_job("interval", seconds=60)
 async def poll_all_devices():
     from services.ping_service import ping
     from services.snmp_service import poll_device_metrics
+    from services.notification_service import fire_triggers
 
     db = SessionLocal()
     devices = db.query(models.Device).all()
@@ -131,6 +132,12 @@ async def poll_all_devices():
                 if result["reachable"]:
                     if dev.status == "offline":
                         _write_log(_db, "info", f"{dev.hostname} ({dev.ip_address}) came back online", source="monitoring", device_id=dev.id)
+                        fire_triggers(
+                            _db, "device_up",
+                            f"Device Up: {dev.hostname}",
+                            f"{dev.hostname} ({dev.ip_address}) is back online.",
+                            device_id=dev.id,
+                        )
                     dev.status = "online"
                     dev.last_seen = now
                 else:
@@ -142,6 +149,12 @@ async def poll_all_devices():
                             message=f"{dev.hostname} ({dev.ip_address}) is unreachable",
                         ))
                         _write_log(_db, "critical", f"{dev.hostname} ({dev.ip_address}) went offline", source="monitoring", device_id=dev.id)
+                        fire_triggers(
+                            _db, "device_down",
+                            f"Device Down: {dev.hostname}",
+                            f"{dev.hostname} ({dev.ip_address}) is unreachable.",
+                            device_id=dev.id,
+                        )
                     dev.status = "offline"
 
                 if result.get("rtt_ms"):
@@ -170,6 +183,12 @@ async def poll_all_devices():
                                     message=f"{dev.hostname}: {metric} at {value}{alert_info['unit']}",
                                 ))
                                 _write_log(_db, alert_info["severity"], f"{dev.hostname}: {metric} at {value}{alert_info['unit']} (threshold exceeded)", source="snmp", device_id=dev.id)
+                                fire_triggers(
+                                    _db, f"{metric}_high",
+                                    f"High {metric.upper()}: {dev.hostname}",
+                                    f"{dev.hostname}: {metric} is {value}{alert_info['unit']} (threshold exceeded)",
+                                    device_id=dev.id,
+                                )
                             if alert_info["severity"] == "warning" and dev.status == "online":
                                 dev.status = "warning"
                 _db.commit()

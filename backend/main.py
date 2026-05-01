@@ -32,6 +32,7 @@ from routers.topologies import router as topologies_router
 from routers.bulkconfig import router as bulkconfig_router
 from routers.proxy import router as proxy_router
 from routers.netflow import router as netflow_router
+from routers.notifications import router as notifications_router
 from services import netflow_service
 
 
@@ -132,6 +133,7 @@ app.include_router(topologies_router)
 app.include_router(bulkconfig_router)
 app.include_router(proxy_router)
 app.include_router(netflow_router)
+app.include_router(notifications_router)
 
 
 @app.get("/health")
