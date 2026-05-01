@@ -2,7 +2,7 @@ import { useState } from "react";
 import Layout from "../components/Layout";
 import StatusBadge from "../components/StatusBadge";
 import { devicesAPI, vaultAPI } from "../api";
-import { Plus, Trash2, Edit3, Wifi, Download, ChevronDown, ChevronUp, Cpu, Radar, X, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Edit3, Wifi, Download, ChevronDown, ChevronUp, Cpu, Radar, X, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -231,6 +231,7 @@ export default function DeviceHub() {
   const [sortKey, setSortKey] = useState("hostname");
   const [sortDir, setSortDir] = useState(1);
   const [filter, setFilter] = useState("");
+  const [showIp, setShowIp] = useState(true);
 
   const { data: rawDevices, isLoading: loading } = useQuery({ queryKey: ["devices"], queryFn: () => devicesAPI.list().then(r => r.data), staleTime: 30_000 });
   const { data: rawVaultCreds } = useQuery({ queryKey: ["vault"], queryFn: () => vaultAPI.list().then(r => r.data), staleTime: 60_000 });
@@ -307,6 +308,14 @@ export default function DeviceHub() {
         />
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowIp((v) => !v)}
+            title={showIp ? "Hide IP column" : "Show IP column"}
+            className="flex items-center gap-2 px-3 py-1.5 bg-surface hover:bg-white/10 border border-border text-muted hover:text-white text-sm rounded-lg transition-colors"
+          >
+            {showIp ? <EyeOff size={14} /> : <Eye size={14} />}
+            IP
+          </button>
+          <button
             onClick={() => { setShowDiscover((v) => !v); setShowForm(false); setEditing(null); }}
             className="flex items-center gap-2 px-4 py-1.5 bg-surface hover:bg-white/10 border border-border text-white text-sm rounded-lg transition-colors"
           >
@@ -344,26 +353,34 @@ export default function DeviceHub() {
           <table className="w-full text-sm">
             <thead className="border-b border-border">
               <tr>
-                {[["hostname","Hostname"],["ip_address","IP"],["device_type","Type"],["vendor","Vendor"],["location","Location"],["status","Status"]].map(([k,l]) => (
+                {[["hostname","Hostname"],["device_type","Type"],["vendor","Vendor"],["location","Location"],["status","Status"]].map(([k,l]) => (
                   <th key={k} onClick={() => sort(k)}
                     className="px-4 py-3 text-left text-xs font-medium text-muted cursor-pointer hover:text-white select-none">
                     <span className="flex items-center gap-1">{l}<SortIcon k={k} /></span>
                   </th>
                 ))}
+                {showIp && (
+                  <th onClick={() => sort("ip_address")}
+                    className="px-4 py-3 text-left text-xs font-medium text-muted cursor-pointer hover:text-white select-none">
+                    <span className="flex items-center gap-1">IP<SortIcon k="ip_address" /></span>
+                  </th>
+                )}
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
+                <tr><td colSpan={showIp ? 7 : 6} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
               ) : sorted.map((d) => (
                 <tr key={d.id} className="hover:bg-white/2 transition-colors">
                   <td className="px-4 py-3 font-mono text-white">{d.hostname}</td>
-                  <td className="px-4 py-3 font-mono text-muted">{d.ip_address}:{d.ssh_port}</td>
                   <td className="px-4 py-3 text-muted">{d.device_type}</td>
                   <td className="px-4 py-3 text-muted">{d.vendor}</td>
                   <td className="px-4 py-3 text-muted">{d.location || "—"}</td>
                   <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
+                  {showIp && (
+                    <td className="px-4 py-3 font-mono text-muted">{d.ip_address}:{d.ssh_port}</td>
+                  )}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => handleTestSSH(d.id)} title="Test SSH"
