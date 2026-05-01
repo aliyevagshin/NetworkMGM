@@ -1,16 +1,27 @@
-import { Bell, User } from "lucide-react";
-import { useAlertStore, useAuthStore } from "../store";
+import { Bell, User, Sun, Moon } from "lucide-react";
+import { useAlertStore, useAuthStore, useThemeStore } from "../store";
 import { Link } from "react-router-dom";
 
 export default function Topbar({ title }) {
   const { count } = useAlertStore();
   const { user } = useAuthStore();
+  const { theme, toggle } = useThemeStore();
   const totalAlerts = count.critical + count.warning;
 
   return (
     <header className="h-14 border-b border-border bg-surface flex items-center justify-between px-6 shrink-0">
       <h1 className="font-semibold text-white">{title}</h1>
       <div className="flex items-center gap-4">
+        {/* Theme toggle */}
+        <button
+          onClick={toggle}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          className="text-muted hover:text-white transition-colors"
+        >
+          {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
+
+        {/* Alert bell */}
         <Link to="/monitoring" className="relative text-muted hover:text-white transition-colors">
           <Bell size={18} />
           {totalAlerts > 0 && (
@@ -19,10 +30,14 @@ export default function Topbar({ title }) {
             </span>
           )}
         </Link>
+
+        {/* User info */}
         <div className="flex items-center gap-2 text-sm text-muted">
           <User size={15} />
           <span>{user?.username || "..."}</span>
-          <span className="px-1.5 py-0.5 rounded text-xs bg-accent/20 text-accent">{user?.role}</span>
+          <span className="px-1.5 py-0.5 rounded text-xs bg-accent/20 text-accent">
+            {user?.role}
+          </span>
         </div>
       </div>
     </header>

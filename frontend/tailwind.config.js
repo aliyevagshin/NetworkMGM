@@ -1,14 +1,16 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        bg: "#0f1117",
-        surface: "#1a1d27",
+        // CSS-variable driven — switch between dark/light via html.light class
+        bg:      "rgb(var(--c-bg)      / <alpha-value>)",
+        surface: "rgb(var(--c-surface) / <alpha-value>)",
+        muted:   "rgb(var(--c-muted)   / <alpha-value>)",
+        border:  "rgb(var(--c-border)  / <alpha-value>)",
         accent: "#4f7cff",
-        muted: "#8892a4",
-        border: "#2a2d3e",
         online: "#22c55e",
         warning: "#f59e0b",
         critical: "#ef4444",

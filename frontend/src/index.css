@@ -2,32 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  box-sizing: border-box;
+/* ── Theme variables ────────────────────────────────────────────────────── */
+:root {
+  /* Dark (default) — values are R G B channels for Tailwind <alpha-value> */
+  --c-bg:      15  17  23;    /* #0f1117 */
+  --c-surface: 26  29  39;   /* #1a1d27 */
+  --c-muted:   136 146 164;  /* #8892a4 */
+  --c-border:  42  45  62;   /* #2a2d3e */
+  --c-text:    #e8eaf0;
+  --c-text-primary: #ffffff;
+  --c-scrolltrack: #1a1d27;
+  --c-scrollthumb: #2a2d3e;
 }
 
+html.light {
+  --c-bg:      241 245 249;  /* #f1f5f9 */
+  --c-surface: 255 255 255;  /* #ffffff */
+  --c-muted:   100 116 139;  /* #64748b */
+  --c-border:  226 232 240;  /* #e2e8f0 */
+  --c-text:    #334155;
+  --c-text-primary: #0f172a;
+  --c-scrolltrack: #f1f5f9;
+  --c-scrollthumb: #cbd5e1;
+}
+
+* { box-sizing: border-box; }
+
 body {
-  background-color: #0f1117;
-  color: #e8eaf0;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  background-color: rgb(var(--c-bg));
+  color: var(--c-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Arial, sans-serif;
   margin: 0;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #1a1d27;
-}
-::-webkit-scrollbar-thumb {
-  background: #2a2d3e;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4f7cff;
+/* ── Light mode: override literal-white Tailwind utilities ─────────────── */
+html.light .text-white              { color: var(--c-text-primary) !important; }
+html.light .hover\:text-white:hover { color: var(--c-text-primary) !important; }
+
+/* White semi-transparent backgrounds → equivalent dark-on-light */
+html.light .bg-white\/5               { background-color: rgba(0,0,0,.04) !important; }
+html.light .hover\:bg-white\/5:hover  { background-color: rgba(0,0,0,.04) !important; }
+html.light .bg-white\/\[0\.02\]       { background-color: rgba(0,0,0,.02) !important; }
+html.light .hover\:bg-white\/\[0\.02\]:hover { background-color: rgba(0,0,0,.02) !important; }
+
+/* Input / select fix in light mode */
+html.light input,
+html.light select,
+html.light textarea {
+  color: var(--c-text-primary);
+  background-color: rgb(var(--c-bg));
 }
 
-.xterm-viewport {
-  overflow-y: auto !important;
-}
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--c-scrolltrack); }
+::-webkit-scrollbar-thumb { background: var(--c-scrollthumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4f7cff; }
+
+.xterm-viewport { overflow-y: auto !important; }

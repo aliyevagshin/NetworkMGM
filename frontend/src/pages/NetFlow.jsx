@@ -33,11 +33,6 @@ function fmtBytesAxis(b) {
   return `${b}B`;
 }
 
-function shortIp(ip) {
-  const parts = ip.split(".");
-  return parts.length === 4 ? `${parts[0]}.${parts[1]}…${parts[3]}` : ip;
-}
-
 const TT_STYLE = {
   background: "#1a1d27", border: "1px solid #2a2d3e",
   borderRadius: 8, fontSize: 12,
@@ -124,11 +119,11 @@ function ConnectionsCard({ title, data }) {
         <div className="space-y-2">
           {top.map((c, i) => (
             <div key={i} className="space-y-0.5">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-mono text-muted truncate max-w-[180px]">
-                  {shortIp(c.src)} → {shortIp(c.dst)}
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-[11px] font-mono text-muted whitespace-nowrap">
+                  {c.src} → {c.dst}
                 </span>
-                <span className="text-xs text-white shrink-0 ml-2">{fmtBytes(c.bytes)}</span>
+                <span className="text-xs text-white shrink-0">{fmtBytes(c.bytes)}</span>
               </div>
               <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                 <div
