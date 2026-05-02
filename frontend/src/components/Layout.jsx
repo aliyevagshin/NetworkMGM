@@ -8,9 +8,13 @@ import { useMonitoringSSE } from "../hooks/useSSE";
 export default function Layout({ title, children }) {
   const setCount = useAlertStore((s) => s.setCount);
   const setUser  = useAuthStore((s) => s.setUser);
+  const user     = useAuthStore((s) => s.user);
 
   useEffect(() => {
-    authAPI.me().then((r) => setUser(r.data)).catch(() => {});
+    // Only fetch /auth/me on first load; subsequent tab switches skip the round-trip
+    if (!user) {
+      authAPI.me().then((r) => setUser(r.data)).catch(() => {});
+    }
   }, []);
 
   // SSE replaces the 20s polling interval for alert badge counts

@@ -5,9 +5,14 @@ import { Download, Eye, RotateCcw, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
 import api from "../api";
+import { useQuery } from "@tanstack/react-query";
 
 export default function Backup() {
-  const [devices, setDevices] = useState([]);
+  const { data: devices = [] } = useQuery({
+    queryKey: ["devices"],
+    queryFn: () => devicesAPI.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
   const [backups, setBackups] = useState([]);
   const [filterDevice, setFilterDevice] = useState("");
   const [q, setQ] = useState("");
@@ -15,7 +20,6 @@ export default function Backup() {
   const [viewContent, setViewContent] = useState("");
 
   const load = () => {
-    devicesAPI.list().then((r) => setDevices(r.data));
     backupsAPI.list(filterDevice || undefined).then((r) => setBackups(r.data));
   };
 

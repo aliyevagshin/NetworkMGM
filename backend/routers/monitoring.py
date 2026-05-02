@@ -70,6 +70,7 @@ def device_metrics(
     device_id: int,
     metric: Optional[str] = Query(None),
     hours: int = Query(24),
+    limit: int = Query(1440),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -80,7 +81,7 @@ def device_metrics(
     )
     if metric:
         query = query.filter(models.MetricSample.metric == metric)
-    return query.order_by(models.MetricSample.timestamp.asc()).all()
+    return query.order_by(models.MetricSample.timestamp.asc()).limit(limit).all()
 
 
 @router.post("/poll/{device_id}")
@@ -177,13 +178,14 @@ def _build_status_payload(db: Session) -> dict:
 
 
 def _build_alerts_payload(db: Session) -> dict:
-    critical = db.query(models.Alert).filter(
-        models.Alert.resolved == False, models.Alert.severity == "critical"
-    ).count()
-    warning = db.query(models.Alert).filter(
-        models.Alert.resolved == False, models.Alert.severity == "warning"
-    ).count()
-    return {"type": "alerts", "data": {"critical": critical, "warning": warning}}
+    rows = (
+        db.query(models.Alert.severity, func.count(models.Alert.id))
+        .filter(models.Alert.resolved == False)
+        .group_by(models.Alert.severity)
+        .all()
+    )
+    counts = {sev: cnt for sev, cnt in rows}
+    return {"type": "alerts", "data": {"critical": counts.get("critical", 0), "warning": counts.get("warning", 0)}}
 
 
 @router.get("/stream")

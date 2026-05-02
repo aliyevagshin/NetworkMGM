@@ -165,13 +165,30 @@ Grafana    → reads Prometheus, port 3001
 - Vault credentials encrypted with AES-256 Fernet; enable passwords stored and decrypted separately
 
 ### Frontend bundle splitting (Vite)
-- Vendor chunks split by function: react + router, reactflow, xterm, query, pdf
+- Vendor chunks split by function: react + router, reactflow, xterm, query, pdf, recharts + d3
 - `manualChunks` as a function (not object) ensures React deduplication across all transitive deps
 - Only changed chunks re-download on app updates; large deps cached independently
+- All 17 pages lazy-loaded with `React.lazy()` + `Suspense` — initial bundle is minimal
+- Sidebar links preload the target page's JS chunk on `mouseenter` — chunk download starts before click
+
+### React Query caching
+- Global `staleTime: 30s`, `gcTime: 10min`, `refetchOnWindowFocus: false`
+- Device list (`["devices"]` key) shared across all pages — SSH Console, Backup, Logs, Web Console all read from cache instead of issuing separate API calls
+- `Layout.jsx` skips `authAPI.me()` if user already in store — eliminates one API round-trip per tab switch
 
 ### Database tuning
 - PostgreSQL connection pool: `pool_size=20`, `max_overflow=30`, `pool_pre_ping=True`, `pool_recycle=300`
 - SQLite (local dev): WAL mode, 64MB page cache, 256MB mmap, NORMAL sync
+- Composite indexes on hot query paths: `(device_id, created_at)` on config_backups; `(resolved, severity)` on alerts; `expiry_date` on licenses; `user`, `action`, `timestamp` on audit_logs; `job_id` on bulk_config_results
+
+### Query optimisations
+- SNMP polling: 3 serial `await snmp_get()` calls replaced with `asyncio.gather()` — per-device poll time: ~9s → ~3s
+- Alert count: 2 separate COUNT queries merged into one `GROUP BY severity` — used in both REST endpoint and SSE stream (fires every 8s)
+- IPAM subnet scan: N+1 pattern (one DB query per discovered IP) replaced with single `WHERE address IN (...)` batch lookup
+- `/monitoring/metrics` capped at 1440 rows (1 point/min × 24h) — prevents unbounded payloads
+- `/alerts` list capped at 500 rows with `LIMIT`; fixed a bug where ORM objects were returned instead of validated schema dicts
+- Redis `invalidate_prefix` switched from blocking `KEYS` to cursor-based `SCAN` — non-blocking on large keyspaces
+- `ping_service` `asyncio.wait_for` timeout reduced from 15s → 8s
 
 ---
 

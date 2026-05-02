@@ -82,6 +82,10 @@ class ConfigBackup(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     device = relationship("Device", back_populates="backups")
 
+    __table_args__ = (
+        Index("ix_configbackup_device_ts", "device_id", "created_at"),
+    )
+
 
 class Alert(Base):
     __tablename__ = "alerts"
@@ -96,6 +100,7 @@ class Alert(Base):
 
     __table_args__ = (
         Index("ix_alert_device_resolved", "device_id", "resolved"),
+        Index("ix_alert_resolved_severity", "resolved", "severity"),
     )
 
 
@@ -133,7 +138,7 @@ class License(Base):
     name = Column(String)
     license_type = Column(String)
     vendor = Column(String)
-    expiry_date = Column(DateTime)
+    expiry_date = Column(DateTime, index=True)
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -141,12 +146,12 @@ class License(Base):
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(Integer, primary_key=True)
-    user = Column(String)
-    action = Column(String)
+    user = Column(String, index=True)
+    action = Column(String, index=True)
     target = Column(String)
     details = Column(Text)
     ip_address = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class SSHSession(Base):
@@ -238,7 +243,7 @@ class BulkConfigJob(Base):
 class BulkConfigResult(Base):
     __tablename__ = "bulk_config_results"
     id = Column(Integer, primary_key=True)
-    job_id = Column(Integer, ForeignKey("bulk_config_jobs.id"))
+    job_id = Column(Integer, ForeignKey("bulk_config_jobs.id"), index=True)
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
     device_hostname = Column(String)
     device_ip = Column(String)

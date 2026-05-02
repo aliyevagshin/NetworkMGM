@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import Layout from "../components/Layout";
 import { devicesAPI } from "../api";
 import { useAuthStore } from "../store";
+import { useQuery } from "@tanstack/react-query";
 import { Terminal as TermIcon, X } from "lucide-react";
 
 function SSHTerminal({ device, onClose }) {
@@ -82,13 +83,13 @@ function SSHTerminal({ device, onClose }) {
 }
 
 export default function SSHConsole() {
-  const [devices, setDevices] = useState([]);
+  const { data: devices = [] } = useQuery({
+    queryKey: ["devices"],
+    queryFn: () => devicesAPI.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
   const [active, setActive] = useState(null);
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    devicesAPI.list().then((r) => setDevices(r.data));
-  }, []);
 
   const filtered = devices.filter((d) =>
     !search || d.hostname.toLowerCase().includes(search.toLowerCase()) || d.ip_address.includes(search)

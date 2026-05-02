@@ -47,9 +47,11 @@ async def poll_device_metrics(host: str, community: str, version: str = "v2c") -
     if not community:
         return _simulate_metrics(host)
 
-    cpu = await snmp_get(host, community, OID_CPU, version)
-    mem_used = await snmp_get(host, community, OID_MEM_USED, version)
-    mem_free = await snmp_get(host, community, OID_MEM_FREE, version)
+    cpu, mem_used, mem_free = await asyncio.gather(
+        snmp_get(host, community, OID_CPU, version),
+        snmp_get(host, community, OID_MEM_USED, version),
+        snmp_get(host, community, OID_MEM_FREE, version),
+    )
 
     metrics = {}
     if cpu is not None:

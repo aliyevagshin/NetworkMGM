@@ -6,6 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { devicesAPI } from "../api";
 import { useAuthStore } from "../store";
+import { useQuery } from "@tanstack/react-query";
 import { Terminal as TermIcon, Globe, ExternalLink, RefreshCw, Lock, Shield } from "lucide-react";
 
 /* ─── SSH Terminal ─────────────────────────────────────────── */
@@ -143,18 +144,16 @@ const TABS = [
 ];
 
 export default function WebConsole() {
-  const [devices, setDevices]   = useState([]);
+  const { data: allDevices = [] } = useQuery({
+    queryKey: ["devices"],
+    queryFn: () => devicesAPI.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const devices = allDevices.filter((d) => d.device_type === "firewall");
   const [active, setActive]     = useState(null);
   const [tab, setTab]           = useState("ssh");
   const [search, setSearch]     = useState("");
   const token = useAuthStore((s) => s.token);
-
-  useEffect(() => {
-    devicesAPI.list().then((r) => {
-      const all = Array.isArray(r.data) ? r.data : [];
-      setDevices(all.filter((d) => d.device_type === "firewall"));
-    });
-  }, []);
 
   const filtered = devices.filter(
     (d) => !search || d.hostname.toLowerCase().includes(search.toLowerCase()) || d.ip_address.includes(search)

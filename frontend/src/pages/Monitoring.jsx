@@ -94,6 +94,8 @@ export default function Monitoring() {
   const [liveDevices, setLiveDevices] = useState(null);
   const [sseActive, setSseActive]     = useState(false);
   const [filter, setFilter]           = useState("");
+  const [debouncedFilter, setDebouncedFilter] = useState("");
+  const filterTimer = useRef(null);
   const tableRef = useRef(null);
 
   const { data: fetchedDevices = [], isLoading, refetch: refetchDevices } = useQuery({
@@ -121,7 +123,7 @@ export default function Monitoring() {
   useMonitoringSSE(handleSSE);
 
   const allDevices = liveDevices ?? fetchedDevices;
-  const q = filter.toLowerCase();
+  const q = debouncedFilter.toLowerCase();
   const devices = q
     ? allDevices.filter(d => d.hostname.toLowerCase().includes(q) || d.ip_address.includes(q))
     : allDevices;
@@ -133,8 +135,8 @@ export default function Monitoring() {
     const batch = missing.slice(0, 10);
     batch.forEach(d => {
       Promise.all([
-        monitoringAPI.metrics(d.id, "cpu", 2),
-        monitoringAPI.metrics(d.id, "memory", 2),
+        monitoringAPI.metrics(d.id, "cpu", 1),
+        monitoringAPI.metrics(d.id, "memory", 1),
       ]).then(([cpu, mem]) => {
         setSparklines(prev => ({ ...prev, [d.id]: { cpu: cpu.data, mem: mem.data } }));
       }).catch(() => {});
@@ -197,11 +199,16 @@ export default function Monitoring() {
                 <input
                   placeholder="Search device / IP..."
                   value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFilter(v);
+                    clearTimeout(filterTimer.current);
+                    filterTimer.current = setTimeout(() => setDebouncedFilter(v), 200);
+                  }}
                   className="bg-bg border border-border rounded-lg pl-7 pr-3 py-1 text-xs text-white w-44 focus:outline-none focus:border-accent"
                 />
                 {filter && (
-                  <button onClick={() => setFilter("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-white">
+                  <button onClick={() => { setFilter(""); setDebouncedFilter(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-white">
                     <X size={11} />
                   </button>
                 )}

@@ -5,6 +5,7 @@ import { Trash2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useQuery } from "@tanstack/react-query";
 
 const LEVEL_COLORS = {
   info:     "text-blue-400",
@@ -18,7 +19,11 @@ const ROW_H = 36;
 
 export default function Logs() {
   const [logs, setLogs] = useState([]);
-  const [devices, setDevices] = useState([]);
+  const { data: devices = [] } = useQuery({
+    queryKey: ["devices"],
+    queryFn: () => devicesAPI.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
   const [filterDevice, setFilterDevice] = useState("");
   const [filterLevel, setFilterLevel] = useState("");
   const [limit, setLimit] = useState(200);
@@ -29,10 +34,6 @@ export default function Logs() {
   const load = () =>
     logsAPI.list({ device_id: filterDevice || undefined, level: filterLevel || undefined, limit })
       .then((r) => setLogs(r.data));
-
-  useEffect(() => {
-    devicesAPI.list().then((r) => setDevices(r.data));
-  }, []);
 
   useEffect(() => {
     load();

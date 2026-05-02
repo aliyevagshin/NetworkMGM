@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
 from database import get_db
 from auth import get_current_user
@@ -23,10 +24,10 @@ def list_alerts(
     cached = cache_service.get(key)
     if cached is not None:
         return cached
-    result = db.query(models.Alert).filter(models.Alert.resolved == resolved).order_by(models.Alert.created_at.desc()).all()
+    result = db.query(models.Alert).filter(models.Alert.resolved == resolved).order_by(models.Alert.created_at.desc()).limit(500).all()
     data = [schemas.AlertOut.model_validate(r).model_dump() for r in result]
     cache_service.set(key, data, ttl=15)
-    return result
+    return data
 
 
 @router.put("/{alert_id}/resolve")
@@ -45,8 +46,13 @@ def alert_count(db: Session = Depends(get_db), current_user=Depends(get_current_
     cached = cache_service.get(_CACHE_COUNT)
     if cached is not None:
         return cached
-    critical = db.query(models.Alert).filter(models.Alert.severity == "critical", models.Alert.resolved == False).count()
-    warning = db.query(models.Alert).filter(models.Alert.severity == "warning", models.Alert.resolved == False).count()
-    result = {"critical": critical, "warning": warning}
+    rows = (
+        db.query(models.Alert.severity, func.count(models.Alert.id))
+        .filter(models.Alert.resolved == False)
+        .group_by(models.Alert.severity)
+        .all()
+    )
+    counts = {sev: cnt for sev, cnt in rows}
+    result = {"critical": counts.get("critical", 0), "warning": counts.get("warning", 0)}
     cache_service.set(_CACHE_COUNT, result, ttl=10)
     return result

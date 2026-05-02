@@ -267,6 +267,64 @@ FIRST_ADMIN_PASSWORD=Admin1234!
 
 ---
 
+## Dəyişiklik Qeydləri — v1.3 (2026-05-01)
+
+### Performans Optimizasiyaları
+
+#### Backend
+| Fayl | Dəyişiklik | Təsir |
+|------|-----------|-------|
+| `snmp_service.py` | 3 serial `await` → `asyncio.gather()` | SNMP poll: ~9s → ~3s per device |
+| `ping_service.py` | `wait_for` timeout: 15s → 8s | Stuck ping-lər daha tez timeout olur |
+| `cache_service.py` | Redis `KEYS` → cursor-based `SCAN` | Böyük keyspace-də Redis bloklanmır |
+| `alerts.py` | 2 COUNT query → 1 `GROUP BY severity` | DB round-trip yarıya endirildi |
+| `alerts.py` | Return bug fix: ORM object əvəzinə validated dict qaytarılır | Düzgünlük |
+| `alerts.py` | `LIMIT 500` əlavə edildi | Unbounded response qarşısı alındı |
+| `monitoring.py` | SSE alert builder-də eyni GROUP BY optimallaşdırması | Hər 8s-də 1 sorğu əvəzinə 2 sorğu |
+| `monitoring.py` | `/metrics` endpoint-ə `LIMIT 1440` əlavə edildi | Böyük payload qarşısı alındı |
+| `ipam.py` | N+1 scan: 254 ayrı query → 1 `IN` batch query | Subnet scan: 254 DB round-trip → 1 |
+| `models.py` | 5 yeni DB index əlavə edildi | WHERE/ORDER BY tam table scan olmur |
+
+**Yeni DB index-lər:**
+- `config_backups (device_id, created_at)` — backup siyahı sorğusu
+- `alerts (resolved, severity)` — alert count GROUP BY
+- `licenses.expiry_date` — gündəlik scheduler scan
+- `audit_logs.user`, `audit_logs.action`, `audit_logs.timestamp` — audit filter sorğuları
+- `bulk_config_results.job_id` — job detail sorğusu
+
+#### Frontend
+| Fayl | Dəyişiklik | Təsir |
+|------|-----------|-------|
+| `Layout.jsx` | `authAPI.me()` yalnız user olmadıqda çağrılır | Hər tab keçidində 1 API round-trip aradan qalxdı |
+| `SSHConsole.jsx` | raw `useEffect` → `useQuery(["devices"])` | Device siyahısı cache-dən anında gəlir |
+| `Backup.jsx` | eyni raw fetch → `useQuery` | Cache-dən anında |
+| `Logs.jsx` | eyni raw fetch → `useQuery` | Cache-dən anında |
+| `WebConsole.jsx` | eyni raw fetch → `useQuery` | Cache-dən anında |
+| `Sidebar.jsx` | `onMouseEnter` ilə chunk preload | Hover-da chunk yüklənməyə başlayır, click-dən əvvəl |
+| `Monitoring.jsx` | Filter input 200ms debounce | Hər hərfdə render yox |
+| `Monitoring.jsx` | Sparkline window: 2h → 1h | Sparkline sorğusu yarıya endirildi |
+| `vite.config.js` | Recharts + d3 ayrı `vendor-charts` chunk | İlk yüklənmə bundle-ı kiçildi |
+
+---
+
+## Dəyişiklik Qeydləri — v1.2 (2026-04-28)
+
+### NetFlow, Bildirişlər, Dark/Light Mode
+- **NetFlow tab** — Router/Firewall cihazları üçün trafik analizi
+  - Top Talkers, Top Connections, Top Protocols donut chart-ları
+  - Live traffic timeline (AreaChart)
+  - Flow records cədvəli (src/dst IP, port, protocol, bytes, packets)
+  - UDP NetFlow v5 collector (port 2055) + simulyator
+- **Notification System** — Email (SMTP), Teams/Slack/generic webhook kanallar
+  - Alert trigger-lər: device_down, device_up, cpu_high, memory_high, traffic_threshold
+  - Cooldown dəstəyi (default 30 dəq)
+- **Dark/Light Mode** — Topbar-da Sun/Moon düyməsi, localStorage-də saxlanır
+- **IP sütunu toggle** — DeviceHub-da Eye/EyeOff ilə IP sütunu gizlədilə bilər
+- **Monitoring poll interval** — 30s → 60s
+- **SSE stream** — device status + alert count hər 8s push-lanır
+
+---
+
 ## Dəyişiklik Qeydləri — v1.1 (2026-04-21)
 
 ### 1. Backup Görüntüləyicisi

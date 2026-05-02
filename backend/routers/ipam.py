@@ -154,9 +154,18 @@ async def scan_subnet(subnet_id: int, db: Session = Depends(get_db), current_use
 
     enriched = await asyncio.gather(*[enrich(ip) for ip in reachable_ips])
 
+    # Batch lookup — one query replaces N individual per-IP queries
+    enriched_ips = [ip for ip, _, _ in enriched]
+    existing_map = {
+        row.address: row
+        for row in db.query(models.IPAddress)
+            .filter(models.IPAddress.address.in_(enriched_ips))
+            .all()
+    }
+
     discovered = []
     for ip_str, hostname, mac in enriched:
-        existing = db.query(models.IPAddress).filter(models.IPAddress.address == ip_str).first()
+        existing = existing_map.get(ip_str)
         if not existing:
             db_ip = models.IPAddress(
                 address=ip_str,

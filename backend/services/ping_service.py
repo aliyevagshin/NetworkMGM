@@ -17,7 +17,7 @@ async def ping(host: str, count: int = 4) -> dict:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
         output = stdout.decode("utf-8", errors="replace")
         return _parse_ping(output, system)
     except Exception:

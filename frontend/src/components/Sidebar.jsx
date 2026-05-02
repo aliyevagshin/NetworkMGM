@@ -8,23 +8,23 @@ import { useAuthStore } from "../store";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/devices", icon: Server, label: "Devices" },
-  { to: "/ssh", icon: Terminal, label: "SSH Console" },
-  { to: "/webconsole", icon: Globe, label: "Web Console" },
-  { to: "/bulk-config", icon: SendToBack, label: "Bulk Config" },
-  { to: "/ipam", icon: Network, label: "IPAM" },
-  { to: "/topology", icon: Activity, label: "Topology" },
-  { to: "/monitoring", icon: BarChart2, label: "Monitoring" },
-  { to: "/netflow", icon: Gauge, label: "NetFlow" },
-  { to: "/backup", icon: HardDrive, label: "Backups" },
-  { to: "/inventory", icon: Package, label: "Inventory" },
-  { to: "/files", icon: FolderOpen, label: "Files" },
-  { to: "/vault", icon: Lock, label: "Vault" },
-  { to: "/keypass", icon: KeyRound, label: "KeyPass" },
-  { to: "/notifications", icon: Bell, label: "Notifications" },
-  { to: "/logs", icon: ScrollText, label: "Logs" },
-  { to: "/docs", icon: FileText, label: "Docs" },
-  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/devices",      icon: Server,        label: "Devices",       preload: () => import("../pages/DeviceHub") },
+  { to: "/ssh",          icon: Terminal,      label: "SSH Console",   preload: () => import("../pages/SSHConsole") },
+  { to: "/webconsole",   icon: Globe,         label: "Web Console",   preload: () => import("../pages/WebConsole") },
+  { to: "/bulk-config",  icon: SendToBack,    label: "Bulk Config",   preload: () => import("../pages/BulkConfig") },
+  { to: "/ipam",         icon: Network,       label: "IPAM",          preload: () => import("../pages/IPAM") },
+  { to: "/topology",     icon: Activity,      label: "Topology",      preload: () => import("../pages/Topology") },
+  { to: "/monitoring",   icon: BarChart2,     label: "Monitoring",    preload: () => import("../pages/Monitoring") },
+  { to: "/netflow",      icon: Gauge,         label: "NetFlow",       preload: () => import("../pages/NetFlow") },
+  { to: "/backup",       icon: HardDrive,     label: "Backups",       preload: () => import("../pages/Backup") },
+  { to: "/inventory",    icon: Package,       label: "Inventory",     preload: () => import("../pages/Inventory") },
+  { to: "/files",        icon: FolderOpen,    label: "Files",         preload: () => import("../pages/Files") },
+  { to: "/vault",        icon: Lock,          label: "Vault",         preload: () => import("../pages/Vault") },
+  { to: "/keypass",      icon: KeyRound,      label: "KeyPass",       preload: () => import("../pages/KeyPass") },
+  { to: "/notifications",icon: Bell,          label: "Notifications", preload: () => import("../pages/Notifications") },
+  { to: "/logs",         icon: ScrollText,    label: "Logs",          preload: () => import("../pages/Logs") },
+  { to: "/docs",         icon: FileText,      label: "Docs",          preload: () => import("../pages/Docs") },
+  { to: "/settings",     icon: Settings,      label: "Settings",      preload: () => import("../pages/Settings") },
 ];
 
 export default function Sidebar() {
@@ -42,11 +42,12 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {nav.map(({ to, icon: Icon, label }) => (
+        {nav.map(({ to, icon: Icon, label, preload }) => (
           <NavLink
             key={to}
             to={to}
             end={to === "/"}
+            onMouseEnter={() => preload?.()}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                 isActive

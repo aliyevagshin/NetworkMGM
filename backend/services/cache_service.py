@@ -59,7 +59,13 @@ def invalidate_prefix(prefix: str) -> None:
     if not r:
         return
     try:
-        keys = r.keys(f"{prefix}*")
+        cursor = 0
+        keys = []
+        while True:
+            cursor, batch = r.scan(cursor, match=f"{prefix}*", count=100)
+            keys.extend(batch)
+            if cursor == 0:
+                break
         if keys:
             r.delete(*keys)
     except Exception:
